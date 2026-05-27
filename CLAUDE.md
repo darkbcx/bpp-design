@@ -1,0 +1,600 @@
+# CLAUDE.md — Beckn BPP Architecture Charter
+
+This document is the governing charter for the design and evolution of this project. It defines **how the system is conceived**, not how it is coded. Every contributor — human or AI — must read this before proposing changes.
+
+This is a **design-stage repository**. There is no application code yet. The current goal is to establish the architectural, conceptual, and modeling foundations on which all future code will be built.
+
+---
+
+## 1. AI Role & Behavior
+
+### 1.1 Operating Mode
+
+When working in this repository, Claude operates as a **collaborating architect**, not as a coder. The default mode is *thinking, modeling, and documenting* — not implementing.
+
+### 1.2 Behavioral Rules
+
+* **Planning first.** Before producing any artifact (diagram, model, ADR, schema sketch, code), articulate the problem, the options, the trade-offs, and the chosen direction. Wait for confirmation before deepening.
+* **Iterative refinement.** Treat every design decision as provisional until it has been challenged. Prefer multiple shallow passes over a single deep one.
+* **One concern at a time.** Do not bundle authentication design with catalog modeling with Beckn mapping. Each subsystem is reasoned about in isolation, then integrated.
+* **No premature code.** Even if a question seems to call for code, respond with a model, a contract, or a constraint first. Code is the last step, not the first.
+* **Surface assumptions explicitly.** If a decision rests on an assumption (e.g., "stores are single-currency"), state it as an assumption and flag it for the user to confirm.
+* **Push back on protocol leakage.** If a request implicitly couples the domain to Beckn (e.g., "let's add a `descriptor` field to Product"), name the leak and propose a protocol-isolated alternative.
+* **Defer ambiguity to the user.** When two architectural directions are both defensible, present both with their trade-offs rather than silently picking one.
+
+### 1.3 What Claude Must Not Do (in this phase)
+
+* Generate application code, framework scaffolding, ORM definitions, or API handlers.
+* Pick a programming language, framework, or database engine without explicit user direction.
+* Copy structures verbatim from `bitemycart` or `ion-specs`.
+* Introduce Beckn vocabulary (`descriptor`, `fulfillment`, `provider`, `item`, `on_search`, etc.) into domain artifacts.
+
+### 1.4 What Claude Must Do
+
+* Maintain conceptual integrity across documents — if a term is defined once, use it consistently everywhere.
+* Keep this `CLAUDE.md` and any subsequent design documents internally consistent. If a new decision invalidates an old one, update both.
+* Treat the **domain model** as sacred and the **Beckn integration** as replaceable.
+
+---
+
+## 2. System Architecture
+
+### 2.1 What This System Is
+
+A **Beckn Provider Platform (BPP)** that acts as a **multi-tenant aggregator of small retailers**. Each retailer operates an independent store within the platform. The platform appears on the Beckn network as a **single BPP**; stores project onto the network as Beckn `provider` nodes inside that BPP's responses ([ADR-0001](decisions/0001-bpp-network-identity.md)). Internally, the system has no inherent dependence on Beckn.
+
+### 2.2 Guiding Architectural Principle
+
+> **The domain must be able to exist, evolve, and be tested without Beckn.**
+> Beckn is a *consumer* of the domain, not a *definer* of it.
+
+If Beckn were removed tomorrow, the system would still be a coherent multi-tenant marketplace. If Beckn evolves (v2 → v3, new domains, breaking schema changes), only the Beckn Bridge should be impacted.
+
+### 2.3 The Dependency Rule
+
+The system is organized so that **dependencies point inward, toward the domain.** This rule precedes and constrains every other architectural choice in this document.
+
+* The **Domain** depends on nothing.
+* The **Application** depends only on the Domain.
+* **Infrastructure** and **Interface** components depend on the Application and Domain — never the reverse.
+* When an inner layer needs an outward capability (e.g., persistence, sending email, calling an external service), it declares a **port** (an abstract contract) that an outer layer implements.
+
+A change in an outer layer must never force a change in an inner layer. A change in the Domain may legitimately require outer layers to adapt — that is the *correct* direction of pressure.
+
+### 2.4 Layered Architecture
+
+Four logical layers, listed innermost to outermost. These are conceptual boundaries; the physical packaging (modules, services, deployables) is deferred (see 2.7).
+
+1. **Domain Layer** — the *what*.
+   * Pure business concepts: User, Store, Membership, Role, Invitation, Product, Catalog, Inventory, Order.
+   * Owns invariants, identifiers, value objects, state transitions, and domain events.
+   * Knows nothing about HTTP, JSON, Beckn, persistence engines, frameworks, or transport.
+   * Testable with no infrastructure and no fixtures from outside.
+
+2. **Application Layer** — the *how*.
+   * Use cases that orchestrate the domain (e.g., "create a store", "publish a product", "accept an invitation").
+   * Coordinates transactions, authorization checks, and domain-event publication.
+   * Speaks only in domain terms. Accepts domain-shaped inputs; returns domain-shaped results. Never returns transport payloads.
+   * Defines ports for everything it cannot do itself (persist, notify, enqueue).
+
+3. **Infrastructure Layer** — the *with what*.
+   * Adapters that implement the ports declared by inner layers: persistence, messaging, identity providers, external services, file storage, search, email delivery.
+   * Substitutable. Swapping a database or identity provider must not ripple inward.
+   * Owns all I/O, all framework integration, and all third-party SDKs.
+
+4. **Interface Layer** — the *for whom*.
+   * The system's outward-facing surfaces — the entry points by which external callers reach the Application Layer. Three distinct families, each its own adapter:
+     * **First-party UI adapters** — admin/owner console, storefront.
+     * **First-party API adapters** — internal APIs consumed by our own front-ends.
+     * **Beckn Bridge adapter** — receives and emits Beckn protocol messages (detailed in 2.6).
+   * Every adapter converts the outside world into Application-Layer calls and converts Application-Layer results back into the outside world's format.
+   * No business logic. No persistence. No cross-adapter coupling.
+
+**Flow of a request (conceptual):**
+
+```
+External caller → Interface adapter → Application use case → Domain logic
+                                            ↓
+                                     Infrastructure (ports)
+                                            ↓
+                                     External systems (DB, queue, ...)
+```
+
+Results flow back along the same path in reverse. The Interface adapter is responsible for shaping the final response for its specific audience.
+
+### 2.5 Bounded Contexts
+
+Layers are *horizontal* (technical concerns). Bounded contexts are *vertical* (business concerns). A single context — say, Catalog — has its own Domain, its own Application use cases, and its own Infrastructure adapters. Layering and context decomposition are complementary, not competing.
+
+The initial contexts:
+
+* **Identity & Access** — users, credentials, sessions, external identity providers, authentication tokens.
+* **Tenancy** — stores, ownership, memberships, roles, invitations. Owner of the multi-tenancy model.
+* **Catalog** — products, variants, attributes, media, taxonomies, pricing.
+* **Inventory** — availability, stock levels, fulfillment readiness. Initial scope to be decided.
+* **Order & Fulfillment** — order lifecycle. Out of scope for the initial phase, but reserved here so it does not collide with other contexts later.
+
+The **Beckn Bridge is not a bounded context.** It is an *adapter* sitting in the Interface Layer that translates between the Beckn protocol and Application-Layer use cases. It has no domain of its own. See 2.6.
+
+Each context owns its own model, its own language, and its own persistence. **Cross-context coupling is forbidden at the storage layer** — no foreign keys, no shared tables, no direct joins across context boundaries.
+
+### 2.6 Inter-Context Communication
+
+Contexts collaborate through two explicit channels:
+
+* **Synchronous queries / commands** — a context exposes a use-case-level API (Application Layer) that another context may call. Such calls are *typed in domain terms* and pass *identifiers and value objects*, never internal records.
+* **Domain events** — when a context changes state in a way that matters to others (e.g., `MembershipAccepted`, `ProductPublished`), it publishes a named event. Interested contexts subscribe.
+
+Rules:
+
+* A context never reaches into another context's persistence or domain model directly.
+* Identifiers crossing context boundaries are treated as opaque references, not as foreign keys.
+* Events describe *what happened* in domain terms — never transport, never UI, never Beckn vocabulary.
+* The choice of synchronous vs. event-driven for a given interaction is a design decision per integration, documented at the time it is made.
+
+### 2.7 The Beckn Bridge: Position and Boundaries
+
+The Beckn Bridge is a **specialized adapter in the Interface Layer**. Architecturally it is one of several entry points into the Application Layer; conceptually it is the most heavily constrained one, because it is the sole place protocol vocabulary is permitted.
+
+Its position:
+
+```
+Beckn network ←→ [ Beckn Bridge adapter ] ←→ Application use cases ←→ Domain
+                  (sole protocol-aware zone)
+```
+
+What this implies:
+
+* The Bridge is an **adapter**, not a layer of its own and not a bounded context.
+* The Bridge **calls** the Application Layer; it never substitutes for it, bypasses it, or duplicates its work.
+* No other adapter (storefront, admin UI, internal API) ever imports anything from the Bridge.
+* The Application Layer is **completely unaware** that the Bridge exists. It treats Bridge-originated calls identically to first-party-originated calls.
+
+The full responsibilities and constraints of the Bridge are detailed in section 4.
+
+### 2.8 Beckn Is One Interface Among Several
+
+The Beckn endpoint is *one* surface, alongside the admin UI, the storefront, and our internal APIs. It is not privileged.
+
+Concretely:
+
+* Every store function (create, manage, publish, transact) must be exercisable through first-party interfaces **without any Beckn participant in the loop**.
+* New domain features are designed against the domain and the first-party interfaces first. Beckn exposure of those features is a follow-up step performed in the Bridge.
+* If a feature is requested that only makes sense in a Beckn context, scrutinize it: it likely indicates protocol leakage or a missing domain concept.
+
+### 2.9 Deployment Topology Is Deferred
+
+This document defines the **logical** architecture. Whether the system ships as a single deployable (modular monolith), as multiple services aligned to bounded contexts, or as something in between is a **downstream** decision driven by operational, team, and scale concerns — not by this charter.
+
+What is non-negotiable regardless of topology:
+
+* Layer boundaries are enforced at the source level, not by network distance.
+* Context boundaries are enforced by explicit contracts, not by deployment.
+* The Bridge is isolatable — it must be possible to deploy or replace it independently, even if today it lives in the same process as everything else.
+
+---
+
+## 3. Data Modeling Philosophy
+
+### 3.1 Modeling Stance
+
+* Model the **business**, not the **wire format**.
+* Names come from the problem domain (e.g., `Store`, `Product`, `Membership`), never from Beckn (`Provider`, `Item`, `Descriptor`).
+* Each entity should have a single, defensible reason to exist. If you cannot describe an entity without referencing Beckn, it does not belong in the domain.
+
+### 3.2 Entity Design Principles
+
+* **Identity is internal and stable.** Every entity has an internally-generated identifier. External identifiers (Beckn IDs, OAuth subject IDs, payment provider IDs) are *attributes*, not primary identities.
+* **Value objects over primitives.** Concepts like Money, Email, Slug, Address, Quantity, and SKU should be modeled as value objects with their own invariants — not as raw strings or numbers on entities.
+* **State transitions are explicit.** Lifecycle stages (e.g., invitation pending → accepted → revoked) are first-class. Avoid boolean flags that imply hidden state machines.
+* **Time is a first-class concept.** Created-at, valid-from, valid-until, accepted-at, etc., are not afterthoughts. Anything with a lifecycle has explicit temporal anchors.
+* **Soft deletion is a domain decision, not a default.** Decide per entity whether deletion is destructive, archival, or forbidden.
+
+### 3.3 Relationship Design Principles
+
+* **Normalize first.** Denormalization is a performance decision made later with evidence, not a starting point.
+* **Aggregates have clear boundaries.** Identify what must be modified together transactionally (e.g., a Product and its Variants) vs. what is referenced (e.g., a Product references a Category).
+* **No bidirectional intimacy across contexts.** A `Product` in Catalog refers to a `Store` by ID; the Catalog context does not load Store internals.
+* **Junction tables represent real concepts.** A `Membership` between a User and a Store is itself an entity with attributes (role, joined-at, status), not a faceless link.
+
+### 3.4 Keeping Models Beckn-Compatible Without Coupling
+
+The test of compatibility is: *can the Beckn Bridge construct a valid Beckn message from the current domain state?* This is achieved by:
+
+* Ensuring the domain captures all **business facts** Beckn cares about — descriptions, prices, categories, media, availability — under domain-native names.
+* Allowing the Bridge to *project* the domain into Beckn shape, *enriching* with protocol-specific constants where needed (e.g., schema versions, context fields).
+* Refusing to add a field to the domain solely to "match Beckn." If Beckn needs a constant or a derived value, the Bridge computes it.
+* Accepting that some Beckn fields will have **no domain origin** (they are protocol metadata) and some domain fields will have **no Beckn destination** (they are internal). This asymmetry is healthy.
+
+### 3.5 Identifier Strategy
+
+* Use opaque, non-sequential identifiers for anything that may be exposed externally (URLs, APIs, Beckn payloads). Sequential keys may exist internally for storage, but should not leak.
+* Tenancy-scoped identifiers (e.g., a product's slug) must be unique *within their tenant*, not globally.
+* Beckn-facing identifiers are derived deterministically from internal identifiers by the Beckn Bridge — never the reverse.
+
+---
+
+## 4. Beckn Integration Strategy
+
+Section 2.7 establishes *where* the Beckn Bridge sits: a specialized adapter in the Interface Layer, never a bounded context, never an inner layer. This section defines *what it does*, *how it does it*, and *what it must refuse to do*.
+
+### 4.1 Exclusive Responsibilities of the Beckn Bridge
+
+The Beckn Bridge is the **sole** place in the system where any of the following is permitted:
+
+* Awareness of Beckn schema, vocabulary, structure, and envelopes.
+* Translation between domain shapes and protocol shapes (in either direction).
+* Protocol-version-specific logic and version negotiation.
+* Validation of Beckn payloads against `ion-specs`.
+* Construction and interpretation of Beckn message envelopes and `context` blocks.
+* Protocol-level concerns: signing, signature verification, registry/discovery lookups, callback URLs, transport-level idempotency keys, retry policy.
+
+If any of these concerns appear outside the Bridge, that is a defect — regardless of how convenient the shortcut seemed.
+
+**Network identity ([ADR-0001](decisions/0001-bpp-network-identity.md)).** The platform appears on the Beckn network as a single BPP. The Bridge accordingly holds the single platform signing key, exposes a single platform-wide Beckn callback endpoint, and derives Beckn `provider` IDs deterministically from internal store identifiers. Inbound messages are routed back to the originating store using protocol-level identifiers (transaction ID, message ID, provider reference) — never by URL shape. The `bpp-id`, `bpp-uri`, signing key material, and registry credentials are supplied as configuration; the Bridge does not own the registry-side lifecycle.
+
+### 4.2 Direction of Translation
+
+The Bridge has two translation paths, and they are intentionally asymmetric:
+
+* **Inbound (Beckn → Application).** The Bridge receives a Beckn message, verifies signatures, validates the payload against the schema for the declared protocol version, extracts the business intent, and invokes an Application use case with **domain-shaped** inputs. The Application Layer never sees raw Beckn JSON, never sees Beckn field names, and never knows which protocol version originated the call.
+* **Outbound (Application → Beckn).** The Application Layer produces a domain result. The Bridge projects that result into the appropriate Beckn message (`on_search`, `on_select`, `on_init`, `on_confirm`, etc.), enriches with protocol-level metadata (context envelope, schema version, signatures), and dispatches it on the network.
+
+The asymmetry is deliberate: outbound is *projection plus enrichment*; inbound is *validation plus extraction*. Neither direction is a mechanical inverse of the other.
+
+### 4.3 Asynchronous Flow and Correlation
+
+Beckn is fundamentally an asynchronous, callback-driven protocol. A request (e.g., `search`) is acknowledged immediately; the substantive response (`on_search`) is delivered later via a callback to the originating participant. This shape is **the Bridge's problem**, not the Application Layer's.
+
+The Bridge owns:
+
+* **Correlation.** Mapping outbound responses back to the original transaction and message IDs.
+* **Idempotency at the protocol boundary.** Recognizing duplicate inbound messages by their protocol-level identifiers and short-circuiting them before they reach the Application Layer.
+* **Transactional context.** Tracking what state a multi-step Beckn flow (search → select → init → confirm) is in, from the protocol's perspective.
+
+The Application Layer is unaware of message IDs, transaction IDs, callback URLs, or acknowledgement semantics. From its perspective, every interaction is a discrete use-case invocation that returns a domain result. The Bridge translates that synchronous-looking interaction into whatever asynchronous protocol dance is required.
+
+### 4.4 Versioning Strategy
+
+The Beckn protocol evolves. Multiple versions may be in flight on the network simultaneously, and our participants may not all upgrade in lockstep. Versioning is a Bridge concern; the domain must not feel it.
+
+* Each supported protocol version has its own translation set within the Bridge. Versions coexist; they do not replace each other silently.
+* The protocol version is negotiated and recorded per inbound message based on the `context` block.
+* A protocol upgrade is a **Bridge-only change**. If a Beckn version bump forces a domain change, that is evidence of leakage — investigate before accepting it.
+* Deprecating a protocol version is an explicit, announced decision, not an accident of refactoring.
+
+### 4.5 Error Handling Across the Boundary
+
+Errors cross the Bridge in both directions, and in both directions they must be **translated**, not forwarded.
+
+* **Domain → Beckn.** Domain errors are expressed in domain terms (e.g., "store not found", "product unavailable", "membership inactive"). The Bridge maps them to the appropriate Beckn error codes and shapes. The Application Layer never emits a Beckn error code.
+* **Beckn → Domain.** Protocol-level errors (schema invalid, signature failed, unknown action) are handled **inside the Bridge** and are never surfaced to the Application Layer as domain errors. Only validated, well-formed, business-meaningful requests reach the Application.
+* **Unmappable cases are explicit.** If a domain error has no clean Beckn equivalent, the Bridge maps it to a generic protocol error *and* logs the mismatch. Silent loss of information is forbidden.
+
+### 4.6 Mapping Discipline
+
+Every domain ↔ protocol mapping must be:
+
+* **Explicit.** Declared as a named, documented artifact — not inferred from naming conventions, reflection, or implicit conversion.
+* **Testable in isolation.** Each mapping is exercisable with sample payloads from `ion-specs`, independent of the rest of the system.
+* **Replaceable.** A new mapping (e.g., for a protocol version bump) can be introduced without rewriting the domain or other mappings.
+* **Asymmetric-tolerant.** Some Beckn fields will have no domain origin (protocol metadata, constants); some domain fields will have no Beckn destination (internal concerns). This is healthy and expected. Do not invent domain fields to "match" Beckn, and do not invent Beckn fields to "expose" the domain.
+* **Defensive about the unknown.** Unrecognized Beckn fields on inbound messages are logged and ignored, not propagated. Domain projections do not invent Beckn fields the schema does not define.
+
+Mappings are documented as a **mapping registry** — a first-class artifact in the repository — not buried inside transformation code.
+
+### 4.7 What the Bridge Must Not Do
+
+* **No business rules.** "An item is available if stock > 0" is a domain rule. "An order can only be confirmed after init" is a domain rule. The Bridge does not encode such things; it asks the Application Layer.
+* **No direct persistence.** The Bridge invokes use cases; it does not read from or write to domain stores.
+* **No upward vocabulary leakage.** Nothing in the Application, Domain, or first-party interfaces imports anything from the Bridge. Beckn names stop at the Bridge boundary.
+* **No cross-adapter shortcuts.** The Bridge does not call into the storefront, the admin UI, or first-party APIs. All paths into the system go through the Application Layer.
+* **No silent rewriting of domain semantics.** If a Beckn field implies a business meaning the domain does not represent, that is a domain-modeling conversation — not a Bridge workaround.
+
+### 4.8 Testing Strategy (Conceptual)
+
+* The **Domain** and **Application** Layers are tested with no Beckn fixtures whatsoever. If a domain test needs a Beckn payload to make sense, the test is wrong.
+* The **Bridge** is tested with real Beckn payloads sourced from `ion-specs` examples, verifying both inbound parsing and outbound projection for each supported protocol version.
+* **End-to-end Beckn flows** are tested as integration tests that exercise the Bridge against a stubbed network counterpart, confirming asynchronous correlation, error mapping, and version negotiation.
+* The presence of Beckn in any test outside the Bridge's own test suite is a red flag worth investigating.
+
+---
+
+## 5. Multi-Tenancy Approach
+
+### 5.1 Tenancy Model
+
+A **Store** is the unit of tenancy. Every business object that belongs to a store (products, inventory, orders, members) is scoped to exactly one store. There is no cross-store data sharing by default.
+
+### 5.2 Isolation Principles
+
+* **Logical isolation is mandatory.** Every query, command, and authorization check carries a store context. There is no "global" listing of tenant-owned data outside of platform-level admin operations.
+* **Physical isolation is a deployment choice, not a domain concern.** The domain model assumes logical multi-tenancy; whether tenants share a database, a schema, or have dedicated infrastructure is decided at the infrastructure layer.
+* **No implicit tenant.** Code paths that operate on tenant-owned data must require a store identifier explicitly. "Current store" is never inferred from ambient state at the domain level.
+* **No tenant leakage in identifiers.** Even when identifiers are globally unique, they must not be guessable across tenants in a way that aids enumeration.
+
+### 5.3 Ownership and Access Model (Conceptual)
+
+* A Store has exactly **one Owner** at any given time. Ownership is transferable but never plural.
+* A Store has zero or more **Admins**. Admins are Users granted administrative access via a **Membership**.
+* A **Membership** is a first-class concept: it represents a User's relationship to a Store, with a role, a status, and a history.
+* A User's identity is global; their *capabilities* are scoped. A User may hold zero or more store Memberships and may additionally hold a platform-scoped role. The full tier model is in §5.4.
+* **Authorization questions are always of the form** *"Does this actor have this capability in this scope?"* — never simply *"Is this actor an admin?"*. The "scope" is the active store for store-scoped users, the platform for platform-scoped users, or system-wide for System Admins.
+
+### 5.4 Authorization Tiers
+
+The system has three authorization tiers, in decreasing privilege ([ADR-0002](decisions/0002-authorization-tiers-and-matrix.md)):
+
+* **System Admin** — meta-administrators. Manage the role → capability matrix; configure platform-level settings. Seeded via deploy configuration only. No in-band creation, demotion, or recovery — lifecycle is entirely operational.
+* **Platform-scoped** — platform operators (support, compliance, network operations). May act across tenants according to assigned capabilities. Not Members of stores by virtue of platform role.
+* **Store-scoped** — Members of one or more stores. May act only on their currently active store; no cross-tenant action is reachable from a store-scoped role.
+
+The **role catalog** is system-defined. Adding a new role is a feature change, not a runtime configuration. Roles within tiers are fixed at design time.
+
+A single User may simultaneously hold a platform-scoped role and Memberships in one or more stores. The two scopes never compose into a single ambient capability set; the user's effective scope at any moment is determined by their **active store** (§5.6).
+
+### 5.5 Capabilities and the Permission Matrix
+
+* The **capability catalog** is system-defined: each capability corresponds to a concrete action. New capabilities are added when the features they gate are added.
+* The **role → capability matrix** is configured at runtime, exclusively by System Admins. No other tier can edit it. Per-store customization of the matrix is not supported. The Tenancy context owns the matrix.
+* **Capability identifiers are single.** A capability has one canonical name (e.g., `product.manage`). Whether it applies cross-tenant or only to the active store is determined by the holder's tier, not by the capability name.
+* For store-scoped roles, every authorization decision applies an **active-store filter** in addition to the capability check: the target object must belong to the user's currently active store.
+* Capabilities exposed via store-scoped roles are a **subset** of those exposed via platform-scoped roles.
+
+### 5.6 Active Store
+
+* "Active store" is a **session-level attribute** identifying which store-scoped Membership is currently in effect.
+* When a user holds more than one Membership, the active store is chosen by explicit UI action: set in session, then immediately redirected to a URL-scoped path (`/stores/<slug>/...`). The URL slug must match the session value on every request; mismatch is an authorization failure.
+* `active store = none` is a valid state available only to System Admins and platform-scoped users. It is the mode in which they exercise platform-scope authority. Pure store-scoped users never see this state.
+* The session storage mechanism itself is deferred to Gap 01 (Identity & Access scope); authorization treats the active store as a logical attribute.
+
+### 5.7 Impersonation
+
+* Impersonation is supported **strictly downward** along the tier hierarchy: System Admin → (Platform | Store); Platform → Store. Same-tier and upward impersonation are forbidden.
+* During impersonation, the impersonator's effective capabilities become exactly those of the impersonated user — no more, no less. Destructive actions are allowed.
+* Impersonation is initiated by an explicit UI action and is time-limited (timeout is operational configuration). An "End impersonation" control is always visible during an impersonating session.
+* **Audit attribution**: every action during impersonation records *both* the real actor and the impersonated user, with the real actor as the responsible party. No action ever appears in audit attributed to the impersonated user alone when impersonation was active.
+
+### 5.8 Store Lifecycle
+
+A Store is in exactly one of four states at any time ([ADR-0003](decisions/0003-store-lifecycle-and-state-machine.md)):
+
+* **Draft** — initial state on creation. Owner and admins build catalog, settings, and metadata; the store is not visible on the Beckn network. Activation is a platform action.
+* **Active** — platform-activated. Open for buyers and visible on the network.
+* **Suspended** — set by the platform under the moderation context. Reversible to Active by the platform only.
+* **Paused** — set by the owner. Reversible to Active by the owner only.
+
+There is no Archived state and no deletion. Stores wind down by remaining in Paused indefinitely; identifiers and history are retained forever.
+
+**State machine.** All other transitions are forbidden:
+
+| From → To | Actor |
+|---|---|
+| Draft → Active | Platform |
+| Active → Paused | Owner |
+| Paused → Active | Owner |
+| Active → Suspended | Platform |
+| Paused → Suspended | Platform |
+| Suspended → Active | Platform |
+
+Suspended → Paused is forbidden — owners cannot launder moderation through a voluntary pause. Owners cannot exit Draft; only platform activation does.
+
+**Admin access per state.** Draft and Paused allow full admin access (the store is simply not visible to buyers). Suspended is read-mostly for owner and admins while moderation is in progress — structural changes are not permitted. Active is full access.
+
+**Order behavior in non-Active states.** Uniform across Paused and Suspended: in-flight orders complete to maintain trust; no new orders are accepted. The wire state prevents discovery on the network; first-party interfaces enforce this independently.
+
+**Memberships and invitations** are preserved across every state transition. Reversibility is real — a store returning from Paused or Suspended retains its full Membership roster and pending invitations.
+
+**Republication on transition.** Every transition involving Active, Paused, or Suspended emits a `StoreStatusChanged` domain event. The Bridge subscribes and re-projects the store's provider record on the Beckn network with the updated wire state. Because Beckn has no provider-deletion mechanism, this re-projection is the only way the network sees a state change. The wire-state mapping (Active → `OPEN`, Paused → `TEMPORARILY_CLOSED`, Suspended → `DISABLED`, Draft → not published) lives in the Bridge's mapping registry, not in the domain.
+
+---
+
+## 6. Invitation & Role Model (Conceptual)
+
+### 6.1 Why Invitations Are First-Class
+
+Adding someone to a store is not a single act — it is a **process** that may span time, may be declined, may expire, and may be revoked. The invitation is the entity that holds the state of that process.
+
+### 6.2 Invitation Lifecycle
+
+An Invitation moves through explicit states:
+
+* **Pending** — created, awaiting recipient action.
+* **Accepted** — recipient has confirmed and a Membership has been created.
+* **Declined** — recipient has refused.
+* **Revoked** — sender (or another authorized party) cancelled the invitation before acceptance.
+* **Expired** — the validity window passed without action.
+
+State transitions are one-way (no resurrecting an expired invitation; a new one is issued). Each transition has an actor and a timestamp.
+
+### 6.3 Invitation Targeting
+
+Invitations support two recipient modes, and the model must accommodate both cleanly:
+
+* **Existing user** — the invitation is bound to a known User identity. Acceptance does not require account creation.
+* **Email-only** — the invitation is bound to an email address and a role; acceptance requires the recipient to authenticate (sign up or sign in) before the Membership is created.
+
+In both cases, the invitation carries the intended role, the target store, the issuer, the validity window, and a single-use acceptance token. The token is opaque, non-guessable, and verifiable without exposing the underlying identifier.
+
+### 6.4 Acceptance Semantics
+
+Acceptance is the atomic transition from `Invitation(Pending)` to `Membership(Active)`. It is a domain operation, not a UI flow:
+
+* Acceptance must verify the invitation is still valid (state, expiry).
+* Acceptance must reconcile the email-only path with the User-bound path (i.e., if a User signs up using the invited email, they should be linkable to the pending invitation).
+* Acceptance must be **idempotent** — repeated acceptance of the same invitation does not create duplicate memberships.
+
+### 6.5 Role Assignment Strategy
+
+* Roles are assigned at the **Membership** level, not at the User level.
+* The initial role set is small and intentional (Owner, Admin). Adding roles later is a deliberate design action — a new role must be justified by a distinct set of capabilities, not by a vague "we might need it."
+* Capabilities map to roles via a documented matrix. The matrix is owned by the Tenancy context, not scattered across feature code.
+* Role changes are auditable events — who changed what, when, on whose authority.
+
+### 6.6 Ownership Transitions
+
+Ownership transfer is a distinct, deliberate operation — *not* a role change. It requires explicit confirmation from both parties (current owner relinquishes; new owner accepts) and is logged as a first-class event. Ownership is never "promoted into" through normal admin actions.
+
+---
+
+## 7. Use of Reference Projects
+
+### 7.1 `/Users/danielignatius/mydev/personal/bitemycart`
+
+**Treat as inspiration for ecommerce shape, not as a template.**
+
+Use it to understand:
+
+* What concepts a small-retailer store typically needs (catalog structures, product variants, attributes, media, vouchers, orders).
+* How storefront and admin flows tend to be organized.
+* What edge cases real ecommerce systems handle (out-of-stock, variant pricing, discount semantics).
+
+Do **not**:
+
+* Copy its database schema. It is built for a different stack, a different scale, and a single-tenant model.
+* Adopt its file structure, framework choices, or naming conventions verbatim.
+* Assume its modeling decisions are correct for a multi-tenant aggregator — many will not be.
+
+When in doubt: read it to learn *what problems exist*, then design the solution from first principles for *our* context.
+
+### 7.2 `/Users/danielignatius/mydev/personal/ion-specs`
+
+**Treat as the source of truth for Beckn / ION protocol — and only that.**
+
+Use it to:
+
+* Look up exact field names, structures, and required attributes when designing the Beckn Bridge.
+* Source real example payloads for Bridge-layer tests.
+* Understand the protocol's flows (search, select, init, confirm, etc.) and error formats.
+* Verify protocol-version differences.
+
+Do **not**:
+
+* Let its structures influence domain entity names or shapes.
+* Treat its schema as a database schema.
+* Import its vocabulary into anything outside the Beckn Bridge.
+* Assume its nesting reflects how data should be stored.
+
+**Rule of thumb:** if you find yourself reading `ion-specs` while designing a domain entity, stop. You are designing the Beckn Bridge, not the domain.
+
+---
+
+## 8. Development Rules & Constraints
+
+### 8.1 Hard Rules (Non-Negotiable)
+
+* The Domain Layer **must not** reference, import, or know about Beckn or `ion-specs` in any form.
+* No Beckn field name (`descriptor`, `provider`, `fulfillment`, `item`, `context`, `intent`, etc.) appears outside the Beckn Bridge.
+* The system **must** remain operable, testable, and demonstrable without any Beckn participant in the loop.
+* No database schema may be designed by reading a Beckn JSON sample. Schemas are derived from the domain model.
+* Every cross-tenant operation requires an explicit tenancy assertion — there is no "ambient tenant."
+
+### 8.2 Decision-Making Heuristics
+
+When facing an architectural choice, prefer:
+
+* **Boring over clever.** Established patterns over novel ones, unless the novelty pays for itself.
+* **Explicit over implicit.** Named states, named transitions, named roles, named capabilities.
+* **Composition over inheritance.** Especially for cross-context features.
+* **Domain language over technical language.** Code reads like the business, not like the framework.
+* **Reversible over irreversible.** Decisions that can be undone are preferred to ones that lock the system in.
+* **One source of truth.** For any fact, there is exactly one place it is authoritatively stored.
+
+### 8.3 When to Pause and Ask
+
+Pause and surface the question to the user when:
+
+* A proposed change would add a new bounded context or split an existing one.
+* A modeling decision has more than one defensible answer and the trade-offs are significant.
+* A feature request implicitly couples the domain to Beckn.
+* A performance/scalability concern is invoked to justify abandoning a clean design.
+* The Beckn Bridge is asked to do something that looks like business logic.
+
+### 8.4 Evolution Strategy
+
+* **Record decisions.** Significant architectural choices are captured as lightweight decision records (problem, options, decision, consequences). They are appended to, not rewritten.
+* **Refactor the domain freely; refactor the Bridge cautiously.** The Bridge is the contract with the outside world; the domain is internal and yours to reshape.
+* **Beckn version migrations live in the Bridge.** Adopting a new Beckn version should not produce a domain-level diff.
+* **Deprecate before deleting.** Domain concepts that are no longer used are marked, observed for a release, then removed.
+* **Schema changes pass the domain-first test.** If a schema change cannot be motivated without referencing a Beckn field, it is the wrong change.
+
+### 8.5 Anti-Patterns to Reject on Sight
+
+* A `beckn_*` table, column, or field anywhere outside the Bridge.
+* A domain entity whose attributes mirror a Beckn object 1:1.
+* Authorization checks that ask "is admin?" without naming the store.
+* "Current tenant" pulled from a global, request-scoped, or ambient source at the domain level.
+* A single God-table that holds products for all stores without scoping by store identity.
+* Invitations represented as a boolean flag on a User row.
+* Direct database access from the Beckn interface, bypassing the Application Layer.
+* Beckn message construction scattered across multiple layers.
+
+---
+
+## 9. Working Agreement
+
+This document is the **contract** between the architecture and every contributor. It is not aspirational; it is binding for the current phase.
+
+If a future requirement appears to violate one of these principles, the correct first response is not to bend the principle — it is to:
+
+1. State the principle the requirement violates.
+2. Propose an alternative that honors the principle.
+3. If no such alternative exists, surface the conflict to the user with a clear trade-off analysis.
+
+Only after that conversation should the architecture itself be revisited. The point of writing this charter is to make architectural drift visible — not to prevent change, but to make sure change is deliberate.
+
+---
+
+## 10. Working Artifacts & Path to the Final Design
+
+This charter is one artifact in a small system of related documents that, taken together, will be consolidated into a **single design document** for handoff to the implementing team. That final document — not this charter — is the foundation the team will use to build the application.
+
+Everything authored in this phase should be written with that destination in mind. Avoid duplication; prefer composition by reference.
+
+### 10.1 Artifact Map
+
+* **`CLAUDE.md`** (this file) — the charter. Principles, rules, boundaries. Kept dense and current. The voice of *what must be true*.
+* **`gaps/`** — open design questions, one per file. Each names the gap, references where the charter touches (or fails to touch) it, lists open questions, implications, and dependencies. Resolved gaps move to `gaps/resolved/`.
+* **`decisions/`** — Architecture Decision Records (ADRs). One per resolved gap or significant judgment call. Captures context, options considered, decision, and consequences. **Immutable once accepted** — superseded by new ADRs, never rewritten.
+* **`design/`** — sub-design documents for subsystems too detailed for the charter (e.g., the Catalog model, the Order lifecycle). Each design doc is backed by one or more ADRs.
+
+Templates live at `decisions/0000-template.md` and `design/0000-template.md`.
+
+### 10.2 Resolution Workflow
+
+For each gap:
+
+1. Discuss the gap and converge on a decision.
+2. Author a new ADR in `decisions/` (next available number) capturing the reasoning. Status starts as `Proposed`.
+3. If the resolution is substantial enough to need its own sub-design, create or extend a file in `design/` referencing the ADR.
+4. Update CLAUDE.md with the *rule* — typically a paragraph or short list in the relevant section — and link to the ADR for the reasoning.
+5. Move the gap file from `gaps/` to `gaps/resolved/` with a one-line pointer to its ADR.
+6. Mark the ADR `Accepted`.
+
+A tiny rule with no alternatives worth recording may skip the ADR and go straight into CLAUDE.md. The ADR exists to capture *judgment calls under uncertainty* — not every decision needs that ceremony.
+
+When an existing accepted ADR is revisited, write a new ADR that **supersedes** it. Update the old ADR's status to `Superseded by ADR-NNNN`. Then update CLAUDE.md to reflect the new rule.
+
+### 10.3 The Consolidated Final Design
+
+The eventual deliverable is `DESIGN.md` (working name) — a **single document** the implementing team will use as the foundation for building the application. It is *not* a copy of this charter; it is the integration of everything produced by this process.
+
+Provisional structure:
+
+1. **Overview and goals.** What the system is, what it must do, what is out of scope.
+2. **Architectural principles** — lifted from CLAUDE.md, consolidated for readability.
+3. **Bounded contexts in detail** — for each context: concepts, relationships, lifecycles, invariants, boundary contracts. Drawn from `design/` files where present.
+4. **Beckn integration** — Bridge responsibilities, mapping discipline, versioning, error handling, asynchronous flow. Drawn from CLAUDE.md §4 plus relevant ADRs.
+5. **Cross-cutting concerns** — identity, authorization, multi-tenancy, events, consistency, idempotency, audit, PII / compliance, localization.
+6. **Operational stance** — observability, testing strategy, deployment topology (decided by the time of authoring).
+7. **Open issues and known limits** — anything not yet resolved at the time of handoff, with explicit pointers to the relevant gap files.
+
+`DESIGN.md` is authored only when the gap backlog is sufficiently resolved that a coherent integration is possible. Until then, ADRs and design docs accumulate; the charter stays current; the final document is the consolidation step.
+
+### 10.4 Rules of Authorship
+
+* The charter never grows into an encyclopedia. If a section starts to bloat with reasoning, move the reasoning into an ADR and leave the rule.
+* ADRs never rewrite history. A wrong decision is corrected by a new ADR that supersedes the old.
+* Design docs reference, never duplicate, the charter and the ADRs.
+* `DESIGN.md`, when authored, references the charter and ADRs by section rather than copying — but presents the material in a reading order optimized for the implementing team, not for design-time iteration.
+* Anything written here is fair game for `DESIGN.md`. Anything that would be embarrassing to put in front of the implementing team needs revision now, not later.

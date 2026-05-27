@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+
+# Local environment / secrets (defensive — no code yet, but safe to set early)
+.env
+.env.local
+.env.*.local
+
+# Common build artifacts (in case code is added later)
+node_modules/
+__pycache__/
+*.pyc
+dist/
+build/
