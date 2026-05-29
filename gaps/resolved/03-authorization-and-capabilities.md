@@ -1,6 +1,6 @@
 # Gap 03 — Authorization & capability model
 
-> **PARTIALLY RESOLVED on 2026-05-28** by [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md). Closed: questions 2 (catalog ownership — system-defined, Tenancy-owned), 3 (matrix mutability — runtime by System Admin only, not per-store), and 4 (composition with platform scope). Question 1 (granularity) is partly answered (capabilities map to concrete actions, action-level). Still open: question 5 (decision-exposure pattern), question 6 (negative permissions), question 7 (audit of denied attempts — see Gap 16).
+> **FULLY RESOLVED on 2026-05-28**. Questions 2, 3, 4 closed by [ADR-0002](../../decisions/0002-authorization-tiers-and-matrix.md). Questions 1, 5, 6, 7 closed by [ADR-0016](../../decisions/0016-authorization-details.md). Active rules in `CLAUDE.md` §5.4–§5.7. This file is preserved for historical context.
 
 ## Statement
 

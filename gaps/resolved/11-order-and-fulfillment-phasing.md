@@ -1,5 +1,7 @@
 # Gap 11 — Order & fulfillment phasing
 
+> **RESOLVED on 2026-05-30** by [ADR-0017 — Order, fulfillment, and the v2 transactional flow](../../decisions/0017-order-and-fulfillment.md). Full Order context model in [`design/order.md`](../../design/order.md). Active rules in `CLAUDE.md` §5.21. Introduced the **Order & Fulfillment** bounded context. This file is preserved for historical context.
+
 ## Statement
 
 The charter lists Order & Fulfillment as a bounded context but marks it "Out of scope for the initial phase, but reserved here so it does not collide with other contexts later" (§2.5). Meanwhile, the Beckn protocol's core flows (`search` → `select` → `init` → `confirm` → `status` → `update`) are *fundamentally* order-centric. A Beckn integration that only handles `search` is a partial implementation. There is a tension between the stated phasing and the protocol's shape.

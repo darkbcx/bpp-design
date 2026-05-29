@@ -1,5 +1,7 @@
 # Gap 16 — Soft delete & audit log
 
+> **RESOLVED on 2026-05-28** by [ADR-0014 — Soft-delete pattern and the Audit context](../../decisions/0014-soft-delete-and-audit.md). Full Audit context model in [`design/audit.md`](../../design/audit.md). Active rules in `CLAUDE.md` §5.19. This file is preserved for historical context.
+
 ## Statement
 
 Two related concerns are mentioned in passing but not designed:

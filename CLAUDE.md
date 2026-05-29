@@ -113,7 +113,8 @@ The initial contexts:
 * **Catalog** — products, variants, attributes, media, taxonomies, pricing.
 * **Inventory** — stock and availability for catalog items. See §5.11.
 * **Promotion** — vouchers and voucher usage; store-scoped. See §5.13.
-* **Order & Fulfillment** — order lifecycle. Out of scope for the initial phase, but reserved here so it does not collide with other contexts later.
+* **Audit** — append-only history of state-changing events across all contexts; downstream subscriber of the event stream. See §5.19.
+* **Order & Fulfillment** — Order, Quote, line-item snapshots, payment-status and fulfillment-status tracking; end-to-end commerce flow. See §5.21.
 
 The **Beckn Bridge is not a bounded context.** It is an *adapter* sitting in the Interface Layer that translates between the Beckn protocol and Application-Layer use cases. It has no domain of its own. See 2.6.
 
@@ -189,7 +190,7 @@ What is non-negotiable regardless of topology:
 * **Value objects over primitives.** Concepts like Money, Email, Slug, Address, Quantity, and SKU should be modeled as value objects with their own invariants — not as raw strings or numbers on entities.
 * **State transitions are explicit.** Lifecycle stages (e.g., invitation pending → accepted → revoked) are first-class. Avoid boolean flags that imply hidden state machines.
 * **Time is a first-class concept.** Created-at, valid-from, valid-until, accepted-at, etc., are not afterthoughts. Anything with a lifecycle has explicit temporal anchors.
-* **Soft deletion is a domain decision, not a default.** Decide per entity whether deletion is destructive, archival, or forbidden.
+* **Soft deletion follows the system-wide pattern in §5.19**: business entities are never deleted (end-of-life is a state transition); operational entities are hard-deleted on schedule.
 
 ### 3.3 Relationship Design Principles
 
@@ -336,11 +337,14 @@ A single User may simultaneously hold a platform-scoped role and Memberships in 
 
 ### 5.5 Capabilities and the Permission Matrix
 
-* The **capability catalog** is system-defined: each capability corresponds to a concrete action. New capabilities are added when the features they gate are added.
+* The **capability catalog** is system-defined. Capabilities follow the **action-level naming** convention `<resource>.<verb>` — e.g., `product.publish`, `voucher.disable`, `store.activate`, `user.scrub` ([ADR-0016](decisions/0016-authorization-details.md)). New capabilities are added when the features they gate are added.
 * The **role → capability matrix** is configured at runtime, exclusively by System Admins. No other tier can edit it. Per-store customization of the matrix is not supported. The Tenancy context owns the matrix.
-* **Capability identifiers are single.** A capability has one canonical name (e.g., `product.manage`). Whether it applies cross-tenant or only to the active store is determined by the holder's tier, not by the capability name.
+* **Capability identifiers are single.** A capability has one canonical name; whether it applies cross-tenant or only to the active store is determined by the holder's tier, not by the capability name.
 * For store-scoped roles, every authorization decision applies an **active-store filter** in addition to the capability check: the target object must belong to the user's currently active store.
 * Capabilities exposed via store-scoped roles are a **subset** of those exposed via platform-scoped roles.
+* **The matrix is grants-only.** Absence of a `(role, capability)` entry means denied. No explicit deny entries, no precedence rules. Special cases like "admins can do everything except X" are modeled as the explicit absence of X in that role's grants.
+* **Decision exposure.** Every Application-Layer use case begins with one or more `AuthorizationPort.requireCapability(name, scope)` calls before any state mutation. The port is owned by the Tenancy context and consumed by every other context via the cross-context port pattern (§5.17). The call raises `AuthorizationDenied` on failure; the use case never proceeds. A non-throwing `hasCapability(...)` is also exposed for conditional UI.
+* **Denial auditing is two-tier.** Authenticated denials emit `identity.authorization_denied` (carrying actor, capability name, scope, typed reason); Audit ingests as a standard record. Anonymous denials (no valid session) are infrastructure-level access logs only — they don't reach the event stream.
 
 ### 5.6 Active Store
 
@@ -510,6 +514,105 @@ Cross-context communication and audit ingestion flow through a **transactional o
 * **LocalizedText in payloads.** Events carrying translatable content carry the full `LocalizedText` (per §5.14), not a single rendering. Subscribers resolve their locale at consumption time.
 
 The **event registry** (in `design/events.md`) is the authoritative catalog — currently ~50 declared events across Tenancy, Identity, Catalog, Inventory, and Promotion contexts. The **subscriber registry** lists known consumers: `beckn-bridge` (republication), `audit` (history), and `inventory-catalog-subscriber` (auto-StockLevel lifecycle).
+
+### 5.17 Cross-context Consistency
+
+Cross-context interactions follow a small set of rules ([ADR-0012](decisions/0012-cross-context-consistency.md)) that build on §5.16 (Domain Events).
+
+* **Strong within, eventual across.** Each context is internally strongly consistent (one DB, transactional aggregates). Across contexts, state propagates via events; expect a small (typically millisecond-scale) inconsistency window.
+* **No cross-context transactions.** A single use case writes to one context per transaction. Even in a modular monolith where the DB physically allows multi-context writes, the architecture forbids it — this preserves the service-extraction path declared in §2.9.
+* **Multi-context flows are orchestrated (v1), not saga-managed.** When a flow spans contexts (most notably order placement, when Gap 11 lands), the orchestrating context's use case calls other contexts in sequence via Application-Layer ports. On failure, the orchestrator explicitly **compensates** (e.g., releases a reservation). Sagas / process managers may be introduced later if longer-running flows justify them.
+* **Read freshness is per-query.** Transactional reads — those that gate a state change (e.g., reserving inventory at checkout) — MUST be synchronous against the owning context. Browse-time reads MAY be eventual / cached / projection-based.
+* **Failure handling: retry, then stuck.** Subscribers that fail transiently are retried with exponential backoff (operational config). After N attempts, the event is moved to a `stuck_events` table; the subscriber's offset does NOT advance. Operators review and either retry or skip-with-acknowledgement. There is no silent drop.
+* **Inbox dedup.** Each subscriber maintains a `processed_events` table keyed by `(subscription_name, event_id)`. Duplicate deliveries become no-ops. Together with the outbox (§5.16), this is the **outbox + inbox** pattern.
+* **Cross-context ports.** A context never imports another's internal types or storage. Cross-context calls go through Application-Layer ports defined by the caller and implemented by the callee as an adapter. In a monolith, ports resolve to in-process calls; if services are extracted later, to RPC/HTTP. Calling code is unchanged.
+
+These rules formalize what the system has implicitly relied on since the first ADRs. They make the cost of breaking them visible.
+
+### 5.18 First-party Idempotency
+
+Mutating use cases that create new state support **client-supplied idempotency keys** to dedup retries from UIs, mobile apps, and internal API clients ([ADR-0013](decisions/0013-first-party-idempotency.md)).
+
+* The caller generates a UUID per logical operation and sends it with the request (HTTP header `Idempotency-Key` or equivalent at other transports).
+* The same UUID across retries of the same operation → server returns the cached result, no duplicate state, no duplicate event.
+* The same UUID with a different payload → typed error (`idempotency_key_reused_with_different_payload`). Surfaces client bugs early.
+* Each context with mutating use cases maintains a small `idempotency_records` table keyed by `(user_id, idempotency_key)`. Records are written **in the same DB transaction** as the state mutation(s) and outbox row(s). Default retention 24 hours (operational).
+* **Naturally-idempotent** operations (those that set state to a target value, like `SetStoreStatus(Paused)`) do not need explicit keys — calling them twice already produces the same outcome.
+* **Reads** never use idempotency keys.
+
+Together with the outbox (§5.16) and inbox (§5.17), this completes the at-least-once-safety posture: producers retry safely, subscribers dedup safely, and clients retry safely.
+
+### 5.19 Soft-Delete Pattern and the Audit Context
+
+Two related concerns settled together ([ADR-0014](decisions/0014-soft-delete-and-audit.md), [`design/audit.md`](design/audit.md)).
+
+#### Soft-delete: codified system-wide pattern
+
+Entities fall into two categories:
+
+* **Business entities — never deleted.** End-of-life is a **state transition to a terminal-but-retained state** (e.g., Product → Archived, User → Disabled, Invitation → Expired). Data is retained indefinitely (subject to PII compliance, Gap 17). Identifiers stay bound to the entity for life — no reuse.
+* **Operational entities — hard-deleted on schedule.** Sessions, stuck events, inbox `processed_events`, outbox dispatched rows, idempotency records. Cleanup is operational (background jobs, DB TTLs).
+
+**Default for any new entity**: business unless clearly operational. Adding deletion to a business entity requires a new ADR.
+
+#### Audit (bounded context)
+
+A new bounded context. Subscribes to **all mutation events** across all contexts; transforms each into an `AuditRecord` with a longer retention than the event log.
+
+* **One AuditRecord per consumed event**, carrying actor (with impersonator per §5.7), aggregate type/id, before/after states where relevant, a summary, the `correlation_id`, and the full `source_envelope` (archival snapshot).
+* **Append-only at the DB role level.** The Audit subscriber's DB role has `INSERT` only; no role has `UPDATE`; a separate cleanup role has `DELETE` scoped to expired records only.
+* **Access** is capability-gated (§5.5):
+  - System Admin reads platform-wide.
+  - Platform-scoped users with capability read cross-tenant.
+  - Store Owners / Admins read records for their store.
+  - Users read records where they were the actor or the impersonated party.
+  - Buyers cannot read audit.
+* **Retention** is per-category (configurable): financial / order events ~7 years; business state changes ~2 years; identity / session ~1 year. Tunable by compliance (Gap 17).
+* **Cryptographic chaining** (tamper evidence beyond append-only roles) is deferred to a future ADR if compliance demands.
+
+Audit emits no domain events — it's a sink. PII handling within audit records is refined by §5.20.
+
+### 5.20 PII Handling and Right-to-Erasure
+
+PII is a cross-cutting policy overlay across every context that touches personal data ([ADR-0015](decisions/0015-pii-and-right-to-erasure.md), [`design/pii.md`](design/pii.md)). The compliance regime for v1 is Indonesia's PDP law, GDPR-compatible by design.
+
+* **Right-to-erasure: PII scrubbing in place.** When a User exercises erasure, the User record is retained (foreign references stay valid); PII fields are replaced with deterministic placeholders per the PII catalog. Audit records get their `source_envelope` PII fields scrubbed in place — record itself stays.
+* **PII catalog** in `design/pii.md` is authoritative — per entity, per event payload — declaring which fields are PII and what scrub action each takes. New entities or events with PII MUST update the catalog at introduction.
+* **PII boundary across contexts.** Outside of events, Identity & Access owns raw PII; other contexts hold only `user_id`. Events MAY carry PII as snapshots (for audit usefulness); subscribers must treat PII-tagged fields as scrubbable.
+* **Audit append-only constraint is qualified.** A dedicated `audit_pii_scrubber` DB role has field-level `UPDATE` on `source_envelope` only. All other audit fields and roles remain immutable per §5.19.
+* **`ScrubUser(user_id, by_actor, reason)`** is the use case that orchestrates erasure across contexts. Idempotent. Emits `identity.user_pii_scrubbed`. Cross-context orchestration via Application-Layer scrub ports per §5.17.
+* **Auto-scrub on Disable**: configurable window (default off). Available for stricter regimes.
+* **Logging discipline.** Domain and application code use a PII-aware redacting logger (Infrastructure). Raw PII never appears in logs.
+* **Cross-store / platform analytics**: aggregate-only; no per-user / per-store PII crosses tenant boundaries.
+* **Processor catalog** (in `design/pii.md`) lists every third party that receives PII (IdP, email service, Beckn participants, observability vendor) with their data scope. Data minimization in transit.
+* **Encryption baseline**: TLS in transit + DB-level at rest. Field-level encryption on demand per specific field.
+* **Data residency**: Indonesia-resident storage by default; enforced operationally, not by the domain.
+
+### 5.21 Order & Fulfillment
+
+The Order context is the integration point for the commerce track — it composes Catalog, Inventory, Promotion, Identity, and Localization into end-to-end flows ([ADR-0017](decisions/0017-order-and-fulfillment.md), [`design/order.md`](design/order.md)). The v2 wire vocabulary at the Bridge boundary uses `Contract`, `Resource`, `Offer`; discovery is **CDS-mediated** (BPP publishes catalogs; does not field `/discover`).
+
+**Order state machine**: `Created` → `Initiated` → `Confirmed` → `Fulfilled`, with `Cancelled` (pre-fulfillment) and `Expired` (Quote TTL) as alternative terminals. Wire mapping: `DRAFT` / `DRAFT` / `ACTIVE` / `COMPLETE` / `CANCELLED`. No deletion (consistent with §5.19); audit retention bucket is financial (~7 years).
+
+**Quote**: stored on the Order at `Created`, immutable thereafter. Line items carry **captured snapshots** — `base_price`, `tax_rate`, derived `tax_amount` and `published_price`, plus `LocalizedText` name/description per ADR-0008. Voucher discount, if applied, captures voucher terms. Default TTL: 15 minutes (operational). Snapshots ensure receipt stability when underlying prices or voucher terms change.
+
+**Buyer**: polymorphic. First-party buyer is a `User.id` (from §5.15). Beckn buyer is `{ bap_id, transaction_id }` at `Created`; the contact snapshot (`name`, `email`, `phone`, `address`) is populated at `Initiated` per v2's "no PII at /select" rule.
+
+**Payment**: external to BPP in v1. `payment_status` (`Pending` / `Authorized` / `Captured` / `Refunded` / `Failed`) is driven by external signals (Beckn-side or future gateway webhooks). BPP doesn't store card data or capture payments — PCI scope is avoided.
+
+**Fulfillment**: self-fulfilled by stores. `fulfillment_status` (`Pending` / `Preparing` / `Shipped` / `Delivered`) is advanced by store admins via store-scoped use cases; projected to wire `Contract.performance`. Logistics integration deferred.
+
+**Cancellation**: pre-fulfillment only in v1. Cancel-from-Initiated releases reservations; cancel-from-Confirmed reverts voucher usage (new event `promotion.voucher_usage_reverted`) and marks payment Refunded (actual refund external). Returns / refunds post-fulfillment deferred.
+
+**Orchestration**: `Order.Initiate`, `Order.Confirm`, and `Order.Cancel` are Application-Layer orchestrations (per §5.17) that call into Inventory, Promotion, and (where relevant) Identity through declared ports, with **hand-coded compensation** on partial failure. No Saga framework in v1.
+
+**Bridge ↔ Order**: the Bridge exposes wire handlers `/select`, `/init`, `/confirm`, `/status`, `/cancel` (inbound from BAP) and corresponding `/on_*` callbacks. The Bridge owns transaction_id correlation, signature verification, and the domain ↔ wire mapping (Order ↔ Contract, line items ↔ Commitments, fulfillment_status ↔ Performance, etc.). Order stays protocol-naive.
+
+**Catalog distribution**: the Bridge publishes catalog updates to **CDS via `/catalog/publish`** on the events it already subscribes to (`tenancy.store_status_changed`, `catalog.*`). The CDS endpoint(s) and credentials are operational configuration (like the registry per §4.1).
+
+**Domain events** (joining the registry): `order.quote_created`, `order.initiated`, `order.confirmed`, `order.cancelled`, `order.expired`, `order.marked_preparing`, `order.marked_shipped`, `order.fulfilled`, `order.payment_status_changed`. Promotion gains `promotion.voucher_usage_reverted`.
+
+**Deferred** for v1: `/track`, `/update`, `/rate`, `/support` handlers; refund / return workflows; payment-gateway integration; platform-managed logistics; multi-shipment / split orders; subscriptions; marketplace fees / payouts; ION `/raise` and `/reconcile`.
 
 ---
 

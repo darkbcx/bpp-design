@@ -200,6 +200,10 @@ Sessions:
 - `identity.session_active_store_set`
 - `identity.session_active_store_cleared`
 
+Authorization & PII ([ADR-0015](../decisions/0015-pii-and-right-to-erasure.md), [ADR-0016](../decisions/0016-authorization-details.md)):
+- `identity.authorization_denied` — emitted when an authenticated User's capability check fails; payload carries actor, `capability_name`, `scope`, and a typed `reason` (`missing_capability`, `wrong_active_store`, `user_disabled`, `tier_mismatch`). Anonymous denials are NOT emitted as events.
+- `identity.user_pii_scrubbed` — emitted when PII scrubbing is performed for a User (right-to-erasure or auto-scrub). Payload carries actor, reason, and timestamp.
+
 ### Catalog context
 
 Products ([ADR-0005](../decisions/0005-catalog-and-product-modeling.md)):
@@ -255,10 +259,20 @@ Vouchers ([ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md)):
 - `promotion.voucher_disabled`
 - `promotion.voucher_enabled`
 - `promotion.voucher_redeemed`
+- `promotion.voucher_usage_reverted` ([ADR-0017](../decisions/0017-order-and-fulfillment.md)) — emitted when a recorded VoucherUsage is logically nullified due to Order cancellation; usage count decrements accordingly
 
 ### Order & Fulfillment context
 
-Deferred to [Gap 11](../gaps/11-order-and-fulfillment-phasing.md).
+Order lifecycle ([ADR-0017](../decisions/0017-order-and-fulfillment.md)):
+- `order.quote_created` — Order created at Quote stage; carries snapshot
+- `order.initiated` — Inventory reserved, voucher validated, buyer contact populated
+- `order.confirmed` — Reservation converted, voucher recorded
+- `order.cancelled` — Pre-fulfillment cancel
+- `order.expired` — Quote TTL passed before Initiated/Confirmed
+- `order.marked_preparing` — Store admin started preparation
+- `order.marked_shipped` — Store admin shipped (carries optional fulfillment_note)
+- `order.fulfilled` — Store admin marked delivered
+- `order.payment_status_changed` — External payment signal updated `payment_status`
 
 ## Subscriber registry (v1)
 

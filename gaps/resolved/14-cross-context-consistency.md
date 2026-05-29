@@ -1,5 +1,7 @@
 # Gap 14 — Cross-context consistency
 
+> **RESOLVED on 2026-05-28** by [ADR-0012 — Cross-context consistency](../../decisions/0012-cross-context-consistency.md). Active rules in `CLAUDE.md` §5.17. This file is preserved for historical context.
+
 ## Statement
 
 §2.6 lists two inter-context channels (synchronous queries/commands and domain events) but does not state which is the default, what consistency guarantees each provides, or how multi-context operations are coordinated. The system's overall consistency stance — strongly consistent across contexts vs. eventually consistent — is unspecified.

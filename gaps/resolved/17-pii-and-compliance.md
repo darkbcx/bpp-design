@@ -1,5 +1,7 @@
 # Gap 17 — PII & compliance stance
 
+> **RESOLVED on 2026-05-28** by [ADR-0015 — PII handling and right-to-erasure](../../decisions/0015-pii-and-right-to-erasure.md). Full PII catalog and scrub registry in [`design/pii.md`](../../design/pii.md). Active rules in `CLAUDE.md` §5.20. This file is preserved for historical context.
+
 ## Statement
 
 The charter does not address personal data, regulatory compliance, or data residency. The system inherently stores PII (user emails at minimum; buyer details, addresses, and phone numbers once Beckn order flows land), and Beckn / ONDC operates in regulated environments. A baseline stance is required before infrastructure decisions are made.

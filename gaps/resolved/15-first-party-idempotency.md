@@ -1,5 +1,7 @@
 # Gap 15 — First-party idempotency
 
+> **RESOLVED on 2026-05-28** by [ADR-0013 — First-party idempotency](../../decisions/0013-first-party-idempotency.md). Active rules in `CLAUDE.md` §5.18. This file is preserved for historical context.
+
 ## Statement
 
 §4.3 establishes that the Beckn Bridge handles protocol-level idempotency for inbound Beckn messages. The charter is silent on idempotency for first-party interfaces (admin UI, storefront, internal APIs). Duplicate submissions from a flaky network, double-clicks, or retry-on-error are everyday occurrences — the Application Layer should have a defined stance.
