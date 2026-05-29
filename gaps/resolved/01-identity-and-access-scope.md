@@ -1,5 +1,7 @@
 # Gap 01 — Identity & Access scope
 
+> **RESOLVED on 2026-05-28** by [ADR-0009 — Identity & Access (external IdP integration)](../../decisions/0009-identity-and-external-idp.md). Full entity model in [`design/identity.md`](../../design/identity.md). Active rules in `CLAUDE.md` §5.15. This file is preserved for historical context.
+
 ## Statement
 
 The `Identity & Access` bounded context is named in §2.5 but its internal model is undefined. Sign-up / sign-in are mentioned in the project overview, and "future support for external identity providers is expected." That is the entirety of the guidance. Before any other context can rely on a `User` identifier, the shape of `User` and its authentication surface must be agreed.

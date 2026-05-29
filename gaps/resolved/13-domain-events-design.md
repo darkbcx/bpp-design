@@ -1,5 +1,7 @@
 # Gap 13 — Domain events design
 
+> **RESOLVED on 2026-05-28** by [ADR-0011 — Domain events](../../decisions/0011-domain-events.md). Full design with event registry in [`design/events.md`](../../design/events.md). Active rules in `CLAUDE.md` §5.16. This file is preserved for historical context.
+
 ## Statement
 
 Domain events appear repeatedly in the charter — as inter-context communication (§2.6), as audit triggers (§5.3, §6.5, §6.6), and as Application-Layer outputs (§2.4). But "domain event" is used as a primitive without being defined. Are events transient or persisted? Do they have a versioned contract? When are they emitted relative to the state change?

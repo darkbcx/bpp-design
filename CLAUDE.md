@@ -108,7 +108,7 @@ Layers are *horizontal* (technical concerns). Bounded contexts are *vertical* (b
 
 The initial contexts:
 
-* **Identity & Access** — users, credentials, sessions, external identity providers, authentication tokens.
+* **Identity & Access** — User identity (mirrored from an external IdP), sessions, active-store binding, profile state. Authentication mechanics live entirely at the IdP. See §5.15.
 * **Tenancy** — stores, ownership, memberships, roles, invitations. Owner of the multi-tenancy model.
 * **Catalog** — products, variants, attributes, media, taxonomies, pricing.
 * **Inventory** — stock and availability for catalog items. See §5.11.
@@ -477,6 +477,40 @@ Multi-language content is a v1 feature. Decisions in [ADR-0008](decisions/0008-l
 * **Bridge locale handling**: each Beckn response carries a per-request locale preference; the Bridge resolves each `LocalizedText` via `get(requested_locale)` and declares the chosen locale in the response. **No automatic translation**: an unauthored locale falls back to the default.
 * **PlatformCategory** labels are authored by System Admins as `LocalizedText`. Missing translations degrade gracefully to the default locale; admin notification of gaps is operational.
 
+### 5.15 Identity & Access
+
+The Identity & Access context owns User identity and Sessions. Authentication mechanics are **fully outsourced to an external IdP** ([ADR-0009](decisions/0009-identity-and-external-idp.md)). Full entity model in [`design/identity.md`](design/identity.md).
+
+* **OIDC-agnostic integration.** The platform authenticates via standard OpenID Connect. The specific IdP (Clerk, Auth0, Supabase Auth, Cognito, Keycloak, …) is configurable infrastructure, not a code-level commitment. No password storage, MFA management, or recovery flows live in our codebase.
+* **User entity** — two-tier profile model:
+  - **IdP-canonical** (refreshed from the IdP on every sign-in; read-only in-app): `email`, `email_verified_at`, `display_name`.
+  - **Platform-owned** (initial value mirrored from IdP at provisioning; mutable in-app thereafter): `preferred_locale`, `avatar_url`.
+  - System-managed: `id` (internal opaque, the cross-context reference key), `external_subject_id` (IdP `sub`, immutable, unique), `status` (`Active` | `Disabled`), timestamps.
+* **Just-in-Time provisioning.** No separate sign-up endpoint in our system; on a User's first successful IdP authentication, the User record is created with mirrored profile and `status = Active`.
+* **Email verification** is trusted from the IdP's `email_verified` claim. Action gates (creating a store, accepting an invitation, placing an order) check `email_verified_at`.
+* **Session** is our own opaque-token entity, independent of the IdP's token: `(id, user_id, created_at, last_used_at, expires_at, active_store_id, device_label, last_ip)`. `active_store_id` is where §5.6's active-store attribute lives. Default idle lifetime 30 days. Operations: sign-out (one), sign-out-everywhere (all sessions for a user).
+* **User lifecycle**: `Active` | `Disabled`. **No deletion.** Disabled users cannot sign in and have all their sessions terminated; their record stays so Memberships, orders, audit, and voucher-usage references remain intact. PII scrubbing is deferred to Gap 17.
+* **Single linked identity in v1.** A User has exactly one `external_subject_id`. Multi-IdP linking (e.g., Google + Apple on one User) is explicitly deferred; if needed later, introduce a separate `ExternalIdentity` entity.
+* **Beckn does not see User data.** Buyers on the network are referenced via opaque order-level identifiers established by the Order context — never by `User.id` or `external_subject_id`.
+
+### 5.16 Domain Events
+
+Cross-context communication and audit ingestion flow through a **transactional outbox + asynchronous dispatcher** ([ADR-0011](decisions/0011-domain-events.md)). Full design and the registry of every declared event live in [`design/events.md`](design/events.md).
+
+* **Transactional outbox.** Every event-emitting context writes events to a local `outbox` table in the same DB transaction as the state change. A background dispatcher delivers them to subscribers. This guarantees state-event consistency and survives crashes.
+* **Envelope** — every event carries: `event_id` (UUID; dedup key), `event_name` (`<context>.<verb_past>`, e.g., `catalog.product_published`), `event_version` (integer), `occurred_at` and `recorded_at` timestamps, `aggregate_type` and `aggregate_id`, `actor` (`{user_id, impersonated_user_id, active_store_id}` — impersonation pair per §5.7), `correlation_id`, `causation_id`, and `payload`.
+* **Delivery semantics: at-least-once.** Subscribers MUST dedup by `event_id`. Exactly-once is not provided.
+* **Ordering.** Per-aggregate order is preserved. Cross-aggregate and cross-context order are not guaranteed.
+* **Versioning.** Additive payload changes don't bump `event_version`; breaking changes do. Multiple versions may coexist; subscribers handle the versions they understand and skip unknown ones forward-compatibly.
+* **Retention.** Events durable for an operational window (default 90 days). Replay within retention is supported. Cold-start beyond retention queries current state via the Application Layer.
+* **Audit is downstream**, not the event log itself. Audit subscribes broadly, transforms into Audit records with its own (longer) retention.
+* **Bridge is event-driven.** It subscribes to the events that drive Beckn republication; re-projection is idempotent. The Bridge does not emit domain events.
+* **Topology-neutral.** The same pattern works in a modular monolith (in-process dispatch) and in a distributed deployment (message bus). Envelope and naming are unchanged.
+* **Domain language only.** Event names and payloads carry domain vocabulary — no transport, no UI, no Beckn names (per §2.6 and §4).
+* **LocalizedText in payloads.** Events carrying translatable content carry the full `LocalizedText` (per §5.14), not a single rendering. Subscribers resolve their locale at consumption time.
+
+The **event registry** (in `design/events.md`) is the authoritative catalog — currently ~50 declared events across Tenancy, Identity, Catalog, Inventory, and Promotion contexts. The **subscriber registry** lists known consumers: `beckn-bridge` (republication), `audit` (history), and `inventory-catalog-subscriber` (auto-StockLevel lifecycle).
+
 ---
 
 ## 6. Invitation & Role Model (Conceptual)
@@ -499,20 +533,34 @@ State transitions are one-way (no resurrecting an expired invitation; a new one 
 
 ### 6.3 Invitation Targeting
 
-Invitations support two recipient modes, and the model must accommodate both cleanly:
+An Invitation targets a recipient **by email** ([ADR-0010](decisions/0010-invitation-account-reconciliation.md)). The Invitation is not bound to a `User.id` at creation; whether the recipient already has a platform User account is a runtime check at acceptance time. With IdP-mediated identity (§5.15), "recipient has an account" and "recipient is creating an account" unify — in both cases, the User is the one whose IdP-verified email matches the invitation's email.
 
-* **Existing user** — the invitation is bound to a known User identity. Acceptance does not require account creation.
-* **Email-only** — the invitation is bound to an email address and a role; acceptance requires the recipient to authenticate (sign up or sign in) before the Membership is created.
+The Invitation carries the intended role, the target store, the issuer, the validity window, and a single-use acceptance token. The token is opaque, non-guessable, and verifiable without exposing the underlying identifier.
 
-In both cases, the invitation carries the intended role, the target store, the issuer, the validity window, and a single-use acceptance token. The token is opaque, non-guessable, and verifiable without exposing the underlying identifier.
+Invitations create **Admin Memberships only**. Owner is set at store creation; ownership transfer uses §6.6, not the invitation flow.
 
 ### 6.4 Acceptance Semantics
 
-Acceptance is the atomic transition from `Invitation(Pending)` to `Membership(Active)`. It is a domain operation, not a UI flow:
+Acceptance is the atomic transition from `Invitation(Pending)` to `Membership(Active)` ([ADR-0010](decisions/0010-invitation-account-reconciliation.md)). It is a domain operation, not a UI flow.
 
-* Acceptance must verify the invitation is still valid (state, expiry).
-* Acceptance must reconcile the email-only path with the User-bound path (i.e., if a User signs up using the invited email, they should be linkable to the pending invitation).
-* Acceptance must be **idempotent** — repeated acceptance of the same invitation does not create duplicate memberships.
+**Reconciliation rule.** An Invitation can be Accepted by a User iff all of the following hold:
+
+* `User.email == Invitation.email` (case-insensitive, against the IdP-canonical email).
+* `User.email_verified_at` is set (per §5.15 / ADR-0009).
+* `User.status == Active`.
+* The Invitation is `Pending` and not expired.
+
+If any condition fails, `AcceptInvitation` returns a typed error and changes no state.
+
+**Linking is always explicit.** Users discover their Invitations via either the email link (`/invitations/<token>`) or a pending-invitations panel in their dashboard, and must click Accept. There is no auto-linking on sign-in.
+
+**Email mismatch** is a typed error — there is no manual claim with an alternate email. The issuer must Revoke and re-issue with the correct address.
+
+**Already a Member.** Idempotent: acceptance marks the Invitation `Accepted` and returns the existing Membership; no duplicate is created.
+
+**Repeated Accept attempts** on a `Pending` Invitation produce exactly one Membership; subsequent calls find the Invitation already `Accepted` and return the same Membership.
+
+**Multiple pending Invitations** for the same email are independent — each Accepted, Declined, or Revoked separately.
 
 ### 6.5 Role Assignment Strategy
 

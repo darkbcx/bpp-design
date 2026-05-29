@@ -1,5 +1,7 @@
 # Gap 12 — Invitation–account reconciliation
 
+> **RESOLVED on 2026-05-28** by [ADR-0010 — Invitation–account reconciliation](../../decisions/0010-invitation-account-reconciliation.md). Active rules in `CLAUDE.md` §6.3 and §6.4. This file is preserved for historical context.
+
 ## Statement
 
 §6.4 says the system "must reconcile the email-only path with the User-bound path — if a User signs up using the invited email, they should be linkable to the pending invitation." The word "linkable" carries all the load. The exact rules for linking, identity collision, and edge cases are undefined.
