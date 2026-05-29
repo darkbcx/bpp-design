@@ -181,7 +181,7 @@ What is non-negotiable regardless of topology:
 ### 3.1 Modeling Stance
 
 * Model the **business**, not the **wire format**.
-* Names come from the problem domain (e.g., `Store`, `Product`, `Membership`), never from Beckn (`Provider`, `Item`, `Descriptor`).
+* Names come from the problem domain (e.g., `Store`, `Product`, `Membership`), never from Beckn (`Provider`, `Resource`, `Offer`, `Contract`, `Descriptor`).
 * Each entity should have a single, defensible reason to exist. If you cannot describe an entity without referencing Beckn, it does not belong in the domain.
 
 ### 3.2 Entity Design Principles
@@ -390,7 +390,7 @@ Suspended → Paused is forbidden — owners cannot launder moderation through a
 
 **Memberships and invitations** are preserved across every state transition. Reversibility is real — a store returning from Paused or Suspended retains its full Membership roster and pending invitations.
 
-**Republication on transition.** Every transition involving Active, Paused, or Suspended emits a `StoreStatusChanged` domain event. The Bridge subscribes and re-projects the store's provider record on the Beckn network with the updated wire state. Because Beckn has no provider-deletion mechanism, this re-projection is the only way the network sees a state change. The wire-state mapping (Active → `OPEN`, Paused → `TEMPORARILY_CLOSED`, Suspended → `DISABLED`, Draft → not published) lives in the Bridge's mapping registry, not in the domain.
+**Republication on transition.** Every transition involving Active, Paused, or Suspended emits a `StoreStatusChanged` domain event. The Bridge subscribes and re-projects the store's catalogs to CDS (via `/catalog/publish`) with the updated wire state. Because Beckn has no provider-deletion mechanism, this re-projection is the only way the network sees a state change. The wire-state mapping (Active → Catalog `isActive: true`; Paused / Suspended → Catalog `isActive: false`; Draft → not published) lives in the Bridge's mapping registry, not in the domain. Beckn v2 does not distinguish owner-pause from platform-suspend at the wire level; the distinction is retained internally.
 
 ### 5.9 Store Publication and Catalogs
 
@@ -725,7 +725,7 @@ Do **not**:
 ### 8.1 Hard Rules (Non-Negotiable)
 
 * The Domain Layer **must not** reference, import, or know about Beckn or `ion-specs` in any form.
-* No Beckn field name (`descriptor`, `provider`, `fulfillment`, `item`, `context`, `intent`, etc.) appears outside the Beckn Bridge.
+* No Beckn field name (`descriptor`, `provider`, `resource`, `offer`, `contract`, `commitment`, `consideration`, `performance`, `context`, `intent`, etc.) appears outside the Beckn Bridge.
 * The system **must** remain operable, testable, and demonstrable without any Beckn participant in the loop.
 * No database schema may be designed by reading a Beckn JSON sample. Schemas are derived from the domain model.
 * Every cross-tenant operation requires an explicit tenancy assertion — there is no "ambient tenant."

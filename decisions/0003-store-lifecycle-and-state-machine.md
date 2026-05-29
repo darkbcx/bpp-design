@@ -99,14 +99,16 @@ Transitions that never touch Active/Paused/Suspended (there are none in the curr
 
 ### Wire format mapping (Bridge-owned)
 
-| Domain state | Beckn wire state |
+| Domain state | Wire signal (Beckn v2) |
 |---|---|
-| Draft | (not published) |
-| Active | `OPEN` |
-| Paused | `TEMPORARILY_CLOSED` |
-| Suspended | `DISABLED` |
+| Draft | Catalog not published to CDS |
+| Active | Catalog published with `isActive: true` |
+| Paused | Catalog published with `isActive: false` |
+| Suspended | Catalog published with `isActive: false` |
 
 This mapping lives in the Bridge's mapping registry, not in the domain. The domain never references Beckn enum values.
+
+**Note**: Beckn v2 does **not** distinguish owner-pause from platform-suspend at the wire level — both project as `isActive: false`. The distinction is retained internally (for moderation context, audit, and admin UX) but not visible to BAPs. If a future protocol revision adds a state reason field, the mapping registry can carry it without disturbing this ADR.
 
 ## Consequences
 
@@ -132,7 +134,7 @@ What this defers:
 What this makes harder:
 
 - Owner-initiated wind-down. The owner has no in-band action to delete or archive. Paused-indefinitely is the only path. If product feedback ever demands explicit wind-down, this ADR must be superseded.
-- Provider-deletion on the Beckn side. Because the protocol cannot delete, even wound-down stores remain in the registry under the BPP's umbrella as `DISABLED` (Suspended) or `TEMPORARILY_CLOSED` (Paused). They never disappear.
+- Provider-deletion on the Beckn side. Because the protocol cannot delete, even wound-down stores remain as catalogs published to CDS with `isActive: false`. They never disappear from the network.
 - Identifier reuse. Slugs and internal store IDs are bound to their stores forever; no recycling.
 
 ## References

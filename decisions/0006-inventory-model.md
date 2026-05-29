@@ -172,4 +172,4 @@ What this makes harder:
 - [ADR-0005](0005-catalog-and-product-modeling.md) — defines the inventory anchors (Product / ProductVariant)
 - [design/catalog.md](../design/catalog.md) — updated to reflect availability moving to Inventory
 - Related gaps: [09](../gaps/09-pricing-and-promotions.md) (Pricing), [11](../gaps/11-order-and-fulfillment-phasing.md) (Order/Fulfillment — Reservation triggers), [13](../gaps/13-domain-events-design.md) (Domain events), [16](../gaps/16-soft-delete-and-audit.md) (Audit)
-- `ion-specs` — Beckn `Item.quantity` concepts
+- `ion-specs` — Beckn v2 `Resource` / `Offer` quantity and availability concepts

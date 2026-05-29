@@ -204,4 +204,4 @@ What this makes harder:
 - [design/catalog.md](../design/catalog.md) — Product / Variant entity reference (updated to point here for pricing attributes)
 - Related gaps: [10](../gaps/10-localization-and-currency.md), [11](../gaps/11-order-and-fulfillment-phasing.md), [13](../gaps/13-domain-events-design.md), [16](../gaps/16-soft-delete-and-audit.md)
 - `bitemycart` — voucher pattern reference (Voucher, CustomerVoucher, VoucherUsage)
-- `ion-specs` — `Item.price`, quote breakdown semantics
+- `ion-specs` — Beckn v2 `Resource` / `Offer` (pricing), `Consideration` (quote breakdown) semantics
