@@ -798,6 +798,7 @@ Everything authored in this phase should be written with that destination in min
 * **`gaps/`** — open design questions, one per file. Each names the gap, references where the charter touches (or fails to touch) it, lists open questions, implications, and dependencies. Resolved gaps move to `gaps/resolved/`.
 * **`decisions/`** — Architecture Decision Records (ADRs). One per resolved gap or significant judgment call. Captures context, options considered, decision, and consequences. **Immutable once accepted** — superseded by new ADRs, never rewritten.
 * **`design/`** — sub-design documents for subsystems too detailed for the charter (e.g., the Catalog model, the Order lifecycle). Each design doc is backed by one or more ADRs.
+* **`handoff/`** — the consolidated **team-facing design package** (see §10.3). Multi-file; integrates the charter + ADRs + sub-designs into a navigable reading order for the implementing team.
 
 Templates live at `decisions/0000-template.md` and `design/0000-template.md`.
 
@@ -818,24 +819,39 @@ When an existing accepted ADR is revisited, write a new ADR that **supersedes** 
 
 ### 10.3 The Consolidated Final Design
 
-The eventual deliverable is `DESIGN.md` (working name) — a **single document** the implementing team will use as the foundation for building the application. It is *not* a copy of this charter; it is the integration of everything produced by this process.
+The eventual deliverable is the **`handoff/`** directory — a multi-file design package the implementing team will use as the foundation for building the application. It is *not* a copy of this charter; it is the integration of everything produced by this process, presented in a reading order optimized for an engineer joining the team.
 
-Provisional structure:
+Directory shape:
 
-1. **Overview and goals.** What the system is, what it must do, what is out of scope.
-2. **Architectural principles** — lifted from CLAUDE.md, consolidated for readability.
-3. **Bounded contexts in detail** — for each context: concepts, relationships, lifecycles, invariants, boundary contracts. Drawn from `design/` files where present.
-4. **Beckn integration** — Bridge responsibilities, mapping discipline, versioning, error handling, asynchronous flow. Drawn from CLAUDE.md §4 plus relevant ADRs.
-5. **Cross-cutting concerns** — identity, authorization, multi-tenancy, events, consistency, idempotency, audit, PII / compliance, localization.
-6. **Operational stance** — observability, testing strategy, deployment topology (decided by the time of authoring).
-7. **Open issues and known limits** — anything not yet resolved at the time of handoff, with explicit pointers to the relevant gap files.
+```
+handoff/
+├── README.md                  Reader's guide + table of contents
+├── 01-overview.md             What the system is, goals, glossary
+├── 02-principles.md           Architectural principles
+├── 03-beckn-integration.md    The Bridge, network identity, wire vocabulary
+├── 04-bounded-contexts/       The seven contexts in detail
+│   ├── README.md
+│   ├── 4.1-identity.md
+│   ├── 4.2-tenancy.md
+│   ├── 4.3-catalog.md
+│   ├── 4.4-inventory.md
+│   ├── 4.5-promotion.md
+│   ├── 4.6-order.md
+│   └── 4.7-audit.md
+├── 05-cross-cutting.md        Authorization, events, consistency, idempotency, soft-delete, PII, localization
+├── 06-operational.md          Testing, observability, deployment topology, external dependencies
+├── 07-open-issues.md          Deferred work and known limits
+└── 08-references.md           ADR index, design/ sub-design index, external references
+```
 
-`DESIGN.md` is authored only when the gap backlog is sufficiently resolved that a coherent integration is possible. Until then, ADRs and design docs accumulate; the charter stays current; the final document is the consolidation step.
+Authoring rules (per §10.4): `handoff/` references the charter and ADRs rather than copying them. It presents the integrated view; deep "why?" questions go back to the ADRs.
+
+The `handoff/` package is authored only when the gap backlog is sufficiently resolved that a coherent integration is possible. Until then, ADRs and design docs accumulate; the charter stays current; `handoff/` is the consolidation step.
 
 ### 10.4 Rules of Authorship
 
 * The charter never grows into an encyclopedia. If a section starts to bloat with reasoning, move the reasoning into an ADR and leave the rule.
 * ADRs never rewrite history. A wrong decision is corrected by a new ADR that supersedes the old.
 * Design docs reference, never duplicate, the charter and the ADRs.
-* `DESIGN.md`, when authored, references the charter and ADRs by section rather than copying — but presents the material in a reading order optimized for the implementing team, not for design-time iteration.
-* Anything written here is fair game for `DESIGN.md`. Anything that would be embarrassing to put in front of the implementing team needs revision now, not later.
+* `handoff/`, when authored, references the charter and ADRs by section rather than copying — but presents the material in a reading order optimized for the implementing team, not for design-time iteration.
+* Anything written here is fair game for `handoff/`. Anything that would be embarrassing to put in front of the implementing team needs revision now, not later.
