@@ -1,5 +1,7 @@
 # Gap 09 — Pricing & promotions
 
+> **RESOLVED on 2026-05-28** by [ADR-0007 — Pricing, tax, and vouchers](../../decisions/0007-pricing-tax-and-vouchers.md). Active rules in `CLAUDE.md` §5.12 (Pricing & Tax) and §5.13 (Vouchers). New bounded context introduced: **Promotion**. This file is preserved for historical context.
+
 ## Statement
 
 Pricing is named as part of Catalog (§2.5) but never modeled. Whether prices are simple per-variant numbers, time-bound, multi-currency, tax-inclusive, or composed with promotions is unresolved. Promotions / vouchers (a feature in `bitemycart`) are not mentioned at all. Pricing is on the path of every checkout and every Beckn `select` / `init` quote — it cannot stay vague.

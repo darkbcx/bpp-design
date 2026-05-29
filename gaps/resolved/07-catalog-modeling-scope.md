@@ -1,5 +1,7 @@
 # Gap 07 — Catalog modeling scope
 
+> **RESOLVED on 2026-05-28** by [ADR-0004](../../decisions/0004-store-publication-and-multi-catalog-projection.md) (Catalog container) and [ADR-0005](../../decisions/0005-catalog-and-product-modeling.md) (Product, variants, categories, media, lifecycle). Full entity model in [`design/catalog.md`](../../design/catalog.md). Charter-level rules in `CLAUDE.md` §5.9 and §5.10. This file is preserved for historical context.
+
 ## Statement
 
 The Catalog context is named and listed alongside products, variants, attributes, media, taxonomies, pricing (§2.5), but no stance is taken on the structure of any of these. Catalog is also the largest piece of the domain by surface area, so the cost of getting its modeling wrong is high. The charter says Catalog must be "clean, extensible, and protocol-friendly" — those are constraints, not a design.

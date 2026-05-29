@@ -1,5 +1,7 @@
 # Gap 08 — Inventory boundary
 
+> **RESOLVED on 2026-05-28** by [ADR-0006 — Inventory model](../../decisions/0006-inventory-model.md). The active rules live in `CLAUDE.md` §5.11. This file is preserved for historical context.
+
 ## Statement
 
 Inventory is listed as a bounded context "initial scope to be decided" (§2.5). Until we decide where Catalog ends and Inventory begins — and what each owns — neither can be modeled. The line between *availability* and *stock* is the central ambiguity.

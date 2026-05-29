@@ -111,7 +111,8 @@ The initial contexts:
 * **Identity & Access** — users, credentials, sessions, external identity providers, authentication tokens.
 * **Tenancy** — stores, ownership, memberships, roles, invitations. Owner of the multi-tenancy model.
 * **Catalog** — products, variants, attributes, media, taxonomies, pricing.
-* **Inventory** — availability, stock levels, fulfillment readiness. Initial scope to be decided.
+* **Inventory** — stock and availability for catalog items. See §5.11.
+* **Promotion** — vouchers and voucher usage; store-scoped. See §5.13.
 * **Order & Fulfillment** — order lifecycle. Out of scope for the initial phase, but reserved here so it does not collide with other contexts later.
 
 The **Beckn Bridge is not a bounded context.** It is an *adapter* sitting in the Interface Layer that translates between the Beckn protocol and Application-Layer use cases. It has no domain of its own. See 2.6.
@@ -386,6 +387,95 @@ Suspended → Paused is forbidden — owners cannot launder moderation through a
 **Memberships and invitations** are preserved across every state transition. Reversibility is real — a store returning from Paused or Suspended retains its full Membership roster and pending invitations.
 
 **Republication on transition.** Every transition involving Active, Paused, or Suspended emits a `StoreStatusChanged` domain event. The Bridge subscribes and re-projects the store's provider record on the Beckn network with the updated wire state. Because Beckn has no provider-deletion mechanism, this re-projection is the only way the network sees a state change. The wire-state mapping (Active → `OPEN`, Paused → `TEMPORARILY_CLOSED`, Suspended → `DISABLED`, Draft → not published) lives in the Bridge's mapping registry, not in the domain.
+
+### 5.9 Store Publication and Catalogs
+
+Publication on the Beckn network is **store-level**: an Active store appears as exactly one `provider` node ([ADR-0004](decisions/0004-store-publication-and-multi-catalog-projection.md)). What appears under that provider is determined by the store's **Catalogs**.
+
+* A store has **exactly one Default Catalog**, auto-created with the store and not deletable. Membership is **opt-out**: every product belonging to the store is included automatically; owners can explicitly exclude specific products.
+* A store may create **additional Catalogs** — named, scoped to the store, containing products from that store only. Membership is **opt-in**: products are added explicitly.
+* A product may belong to **zero or more** catalogs. A product in no catalog still exists in the store but is invisible on the network.
+* **All Catalogs project to Beckn.** BAPs see each catalog as a distinguishable grouping under the provider and may render any of them. The exact Beckn structure used for multi-catalog projection lives in the Bridge's mapping registry, not in the domain.
+* Catalog state changes (created, renamed, product added/removed, deleted) emit domain events; the Bridge re-projects the provider node accordingly, mirroring the republication mechanism from §5.8.
+* The full **Catalog / Product entity model** (variants, attributes, media, taxonomies, lifecycle) is in §5.10 and [`design/catalog.md`](design/catalog.md).
+
+**Activation flow.** Moving a Draft store to Active is a deliberate two-step:
+
+* The owner sets `submitted_at` on the Draft via an explicit "Submit for activation" action.
+* A platform-scoped reviewer with the appropriate capability (per §5.5) sees the Draft in the review queue (filtered to `submitted_at` set) and either activates it (Draft → Active per §5.8) or leaves it pending.
+* There is **no coded activation checklist**. Criteria live in operational policy. Basic data validity (name, contact) is an entity-level invariant, not part of activation criteria.
+
+### 5.10 Catalog and Product Model
+
+The Catalog context owns Products and their variants. Detailed entity model in [`design/catalog.md`](design/catalog.md); decisions and reasoning in [ADR-0005](decisions/0005-catalog-and-product-modeling.md). At charter level:
+
+* **Cross-store identity is independent.** A Product is owned by one store; no Product entity is shared across stores. Two stores selling the same physical SKU maintain two independent records. Cross-store deduplication for discovery is a search-layer concern, not a domain concern.
+* **Two variant modes, chosen per product, immutable:**
+  * **Matrix Mode** — Product has variant-defining attributes (e.g., Size, Color). Variants are explicit entities (combinations of attribute values) that share the Product's SKU. Used when per-variant SKU tracking is not required.
+  * **Flat Mode** — Product has no variant relationship; each "variant" is a separate independent Product with its own SKU. Stores group related Flat products via additional Catalogs (§5.9). Used when per-variant SKU tracking is required.
+  * Decision rule: if any variant needs its own SKU, use Flat; otherwise use Matrix.
+* **Product lifecycle**: Draft → Active → Archived. No deletion; Archived is retained for order history. Active → Draft is forbidden. Mode and store ownership are immutable.
+* **Categorization is platform-defined.** System Admins (§5.4) own a hierarchical Category taxonomy; stores assign their products to platform categories. At least one assignment is an entity invariant for `Active` Products. Store-private organization is served by additional Catalogs (§5.9), not by per-store categories. The Bridge derives Beckn category vocabulary from the platform taxonomy via the mapping registry.
+* **Media** is an ordered list per Product, with optional per-variant overrides in Matrix Mode. Storage is an Infrastructure concern; the domain knows only references.
+* **Baseline Product attributes** — required: name (unique within store), description, ≥1 category assignment for Active, `base_price` and `tax_rate` for Active (§5.12). Optional: SKU (unique within store if set), media, variant-defining attributes (Matrix only).
+* **Domain events** are emitted for every Catalog and Product mutation. The Bridge consumes them for republication; Audit consumes them for history. Event schema is owned by Gap 13.
+
+What's explicitly out of scope at this stage: bundles / kits, digital-goods type taxonomy, search/discovery implementation, media storage, localization (Gap 10).
+
+### 5.11 Inventory
+
+The Inventory context owns *is the item purchasable right now* — stock count, reservations, owner-controlled availability — distinct from Catalog's *what is this item* ([ADR-0006](decisions/0006-inventory-model.md)).
+
+* **Anchors.** Each inventory item is either a Flat Mode Product or a Matrix Mode ProductVariant; exactly one `StockLevel` per inventory item. Inventory references Catalog entities by opaque ID — no joins (§2.6).
+* **StockLevel** carries `stock_count` (integer ≥ 0) and `purchasable` (boolean; owner-controlled; default `true`).
+* **Effective availability** = `purchasable` AND `(stock_count − active reservations) > 0`. Computed on demand from `StockLevel` and active `Reservation` records.
+* **Reservations.** A `Reservation` is a temporary hold with `expires_at`. Created at order `init` (Beckn) or the equivalent first-party checkout step; **converted** (stock decremented atomically) at order `confirm`; **released** on cancel or timeout. The exact Beckn-flow trigger points are owned by Gap 11; the Reservation primitive itself is committed here.
+* **No multi-location, no backorders in v1.** Single logical inventory per store; cannot sell beyond stock.
+* **Stock-movement event log.** Every stock-affecting action emits a typed event (`Received`, `Sold`, `Returned`, `Corrected`, `Reserved`, `Released`, `PurchasableToggled`) carrying actor, timestamp, signed delta, and optional reason. Audit (Gap 16) ingests this stream.
+* **Communication.** Storefront, Admin UI, and Bridge query Inventory **synchronously** for availability. Order context calls Inventory's Application Layer to create/convert/release Reservations. Inventory subscribes to Catalog product/variant lifecycle events — creating StockLevels on creation, marking them `Inactive` on archive.
+* Stock decrement happens **only** via Reservation conversion at order confirm, or via manual `Corrected` adjustments and `Received` receipts. Direct stock writes outside these paths are forbidden.
+
+### 5.12 Pricing and Tax
+
+The Catalog context owns priced entities ([ADR-0007](decisions/0007-pricing-tax-and-vouchers.md)).
+
+* **Money** is a value object: integer amount in minor units (paise, cents) + ISO 4217 currency code. Floating point is forbidden for monetary values.
+* A store has **one currency**, set at creation and **immutable** once the store has any Active product. Stores needing another currency create a new store.
+* **Per-Product** (Flat or Matrix) attributes:
+  - Stored: `base_price` (tax-excluded `Money`), `tax_rate` (decimal percentage, e.g., `18.00`).
+  - Derived, cached, recomputed on change: `tax_amount = round(base_price × tax_rate / 100)`, `published_price = base_price + tax_amount`.
+* **ProductVariant (Matrix)** inherits the parent Product's `tax_rate`; only `price_override` is variant-level. Variant effective values are derived from `(price_override ?? parent.base_price) × parent.tax_rate`. **No per-variant tax rate** — tax category attaches to the product.
+* **Quote construction** is owned by the **Order context**; Catalog supplies item prices and tax breakdowns as inputs. No "quoted price" stored in Catalog.
+
+### 5.13 Vouchers (Promotion context)
+
+The **Promotion** context owns vouchers and voucher usage. Store-scoped — each store creates its own vouchers; no platform-wide promotions in v1 ([ADR-0007](decisions/0007-pricing-tax-and-vouchers.md)).
+
+* **Voucher** attributes: `code` (case-insensitive, unique within store); `description` (`LocalizedText` — see §5.14); `discount_type` (`percentage` | `fixed_amount`); `discount_value`; optional `max_total_uses`, `max_uses_per_user`, `starts_at`, `expires_at`, `minimum_cart_value`; `status` (`Active` | `Disabled`).
+* `Expired` and `Exhausted` are **derived states** (not stored). A voucher is **usable** when `status == Active`, not Expired, not Exhausted, and `now >= starts_at` (if set).
+* **Voucher discount applies to `base_price`** (pre-tax); tax recomputes on the discounted base. GST/VAT-compliant — taxes apply to the actual receivable.
+* **Voucher application is Order-mediated.** Order calls `Promotion.ValidateVoucher(...)` at quote time; on `confirm`, calls `Promotion.RecordVoucherUsage(...)`. `VoucherUsage` is the authoritative redemption log and enforces usage limits.
+* **One voucher per order in v1.** No stacking.
+* Out of scope for v1: platform-wide promotions, rule-based engines (BOGO, automatic cart discounts), customer-specific pricing tiers, time-bound list-price changes (sales windows on the catalog price itself).
+
+### 5.14 Localization
+
+Multi-language content is a v1 feature. Decisions in [ADR-0008](decisions/0008-localization-and-localizedtext.md).
+
+* **`LocalizedText`** is a domain value object representing a string with translations: `entries: Map<bcp47_tag, string>`. Every `LocalizedText` must contain an entry for the **platform default locale `id`** (Bahasa Indonesia). Reads use `get(locale)` which falls back to the default if the requested locale is not present.
+* **Locale tags** follow BCP 47 throughout (`id`, `en`, `en-ID`, `ms`, `jv`, etc.).
+* **Translatable fields** (subject to `LocalizedText`):
+  - **Store**: name, description, public contact display.
+  - **Product**: name, description.
+  - **ProductAttribute** (Matrix): name, and optionally the labels of allowed values (value identity itself stays locale-neutral).
+  - **Media**: alt_text.
+  - **Voucher**: description.
+  - **PlatformCategory**: name.
+* **Locale-neutral** regardless of language: identifiers, slugs, SKUs, voucher codes, `Money` amounts, currency codes, timestamps, status enums.
+* **`Store.supported_locales`** is an ordered list of BCP 47 tags the store declares it publishes in. Always includes `id`; default at creation `[id]`. Owners can add more. Used by the storefront language switcher, the Beckn provider descriptor, and Admin UX. Adding a locale does *not* require backfilling translations — missing locales fall back to `id`.
+* **Uniqueness checks** on translatable fields (e.g., `Product.name`) apply to the default-locale value (`id`). Cross-locale collisions are not checked.
+* **Bridge locale handling**: each Beckn response carries a per-request locale preference; the Bridge resolves each `LocalizedText` via `get(requested_locale)` and declares the chosen locale in the response. **No automatic translation**: an unauthored locale falls back to the default.
+* **PlatformCategory** labels are authored by System Admins as `LocalizedText`. Missing translations degrade gracefully to the default locale; admin notification of gaps is operational.
 
 ---
 

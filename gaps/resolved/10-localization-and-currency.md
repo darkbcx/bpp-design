@@ -1,5 +1,7 @@
 # Gap 10 — Localization & currency
 
+> **RESOLVED on 2026-05-28**. Currency policy resolved by [ADR-0007](../../decisions/0007-pricing-tax-and-vouchers.md); localization model resolved by [ADR-0008](../../decisions/0008-localization-and-localizedtext.md). Active rules in `CLAUDE.md` §5.12 (currency) and §5.14 (localization). This file is preserved for historical context.
+
 ## Statement
 
 Beckn supports localized descriptors and per-context currency. The charter mentions `Money` as a value object (§3.2) but takes no stance on whether the system is single-locale, multi-locale, single-currency, or multi-currency. Because this decision is binary at every modeled attribute (one description vs. localized; one price vs. multi-currency), retrofitting it later is expensive.

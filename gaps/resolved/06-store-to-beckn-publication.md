@@ -1,6 +1,6 @@
 # Gap 06 — Store-to-Beckn publication
 
-> **PARTIALLY RESOLVED on 2026-05-28** by [ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md). Closed: question 1 (default visibility — Draft is not published), question 2 (activation flow — platform-driven, criteria still open), question 4 (modeling location — publication is a Store-state concern at the store level), question 5 (revocation semantics — in-flight orders complete; no new orders), question 6 (lifecycle linkage — automatic via `StoreStatusChanged` event). Still open: question 3 (per-product / per-category visibility within an Active store), question 7 (compliance gating / activation checklist).
+> **RESOLVED on 2026-05-28**. Questions 1, 2, 4, 5, 6 closed by [ADR-0003](../../decisions/0003-store-lifecycle-and-state-machine.md); questions 3 and 7 closed by [ADR-0004](../../decisions/0004-store-publication-and-multi-catalog-projection.md). The active rules live in `CLAUDE.md` §5.8 (lifecycle) and §5.9 (publication and catalogs). This file is preserved for historical context.
 
 ## Statement
 

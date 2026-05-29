@@ -9,6 +9,11 @@ A gap is "resolved" when its decisions are folded into `CLAUDE.md` (or a sibling
 - **02 — Platform-scoped roles** — resolved by [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md); archived at [gaps/resolved/02-platform-scoped-roles.md](resolved/02-platform-scoped-roles.md).
 - **04 — Store lifecycle beyond creation** — resolved by [ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md); archived at [gaps/resolved/04-store-lifecycle.md](resolved/04-store-lifecycle.md).
 - **05 — BPP network identity** — resolved by [ADR-0001](../decisions/0001-bpp-network-identity.md); archived at [gaps/resolved/05-bpp-network-identity.md](resolved/05-bpp-network-identity.md).
+- **06 — Store-to-Beckn publication** — resolved by [ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md) and [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md); archived at [gaps/resolved/06-store-to-beckn-publication.md](resolved/06-store-to-beckn-publication.md).
+- **07 — Catalog modeling scope** — resolved by [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) and [ADR-0005](../decisions/0005-catalog-and-product-modeling.md); full model in [design/catalog.md](../design/catalog.md); archived at [gaps/resolved/07-catalog-modeling-scope.md](resolved/07-catalog-modeling-scope.md).
+- **08 — Inventory boundary** — resolved by [ADR-0006](../decisions/0006-inventory-model.md); archived at [gaps/resolved/08-inventory-boundary.md](resolved/08-inventory-boundary.md).
+- **09 — Pricing & promotions** — resolved by [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md). Introduced the **Promotion** bounded context. Archived at [gaps/resolved/09-pricing-and-promotions.md](resolved/09-pricing-and-promotions.md).
+- **10 — Localization & currency** — currency resolved by [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md); localization resolved by [ADR-0008](../decisions/0008-localization-and-localizedtext.md). Introduced the `LocalizedText` value object. Archived at [gaps/resolved/10-localization-and-currency.md](resolved/10-localization-and-currency.md).
 
 ## Foundations
 
@@ -17,15 +22,7 @@ A gap is "resolved" when its decisions are folded into `CLAUDE.md` (or a sibling
 
 ## Beckn integration shape
 
-6. [Store-to-Beckn publication](06-store-to-beckn-publication.md) *(partially resolved by ADR-0003)*
 7. [Order & fulfillment phasing](11-order-and-fulfillment-phasing.md)
-
-## Catalog & commerce
-
-8. [Catalog modeling scope](07-catalog-modeling-scope.md)
-9. [Inventory boundary](08-inventory-boundary.md)
-10. [Pricing & promotions](09-pricing-and-promotions.md)
-11. [Localization & currency](10-localization-and-currency.md)
 
 ## Cross-cutting model concerns
 
