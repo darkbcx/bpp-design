@@ -8,7 +8,7 @@
 
 ## Context
 
-[ADR-0005](0005-catalog-and-product-modeling.md) established the Catalog as owning *what the product is* — Products, Variants, attributes, categories, media. The sibling context — Inventory — owns *is it purchasable right now*: stock, reservations, owner-controlled availability flags. Without this model, the storefront can't answer "can the buyer buy this?", the Bridge can't project accurate `on_search` results, and order placement ([Gap 11](../gaps/11-order-and-fulfillment-phasing.md)) has no place to commit stock changes.
+[ADR-0005](0005-catalog-and-product-modeling.md) established the Catalog as owning *what the product is* — Products, Variants, attributes, categories, media. The sibling context — Inventory — owns *is it purchasable right now*: stock, reservations, owner-controlled availability flags. Without this model, the storefront can't answer "can the buyer buy this?", the Bridge can't project accurate availability into catalogs published to CDS or `/on_select` quotes, and order placement ([Gap 11](../gaps/11-order-and-fulfillment-phasing.md)) has no place to commit stock changes.
 
 Inventory was deliberately deferred until Catalog was concrete; the Variant entity from ADR-0005 is the natural anchor in Matrix mode, and Product is the anchor in Flat mode.
 
@@ -144,7 +144,7 @@ What this commits to:
 - Inventory is store-scoped — single logical inventory per store.
 - Stock decrement happens **only** via Reservation conversion at order confirm. Direct stock writes are limited to `Corrected` (manual adjustment) and `Received` (receiving).
 - The Order context ([Gap 11](../gaps/11-order-and-fulfillment-phasing.md)) is the primary consumer of Reservations. The Bridge orchestrates the Beckn-side timing.
-- The Bridge queries Inventory synchronously when projecting `on_search` / `on_select` responses; availability values are computed on demand.
+- The Bridge queries Inventory synchronously when projecting availability into catalogs (for `/catalog/publish` to CDS) and into `/on_select` quotes; availability values are computed on demand.
 - Inventory subscribes to Catalog's product/variant lifecycle events. This is the first context-to-context event subscription declared in the design.
 - Audit ([Gap 16](../gaps/16-soft-delete-and-audit.md)) ingests `StockMovement` events.
 - The `availability_flag` placeholder on `ProductVariant` from ADR-0005 is **removed** — availability lives in `StockLevel.purchasable`. [`design/catalog.md`](../design/catalog.md) is updated accordingly; ADR-0005's deferral note ("final shape decided in Gap 08") is honored.

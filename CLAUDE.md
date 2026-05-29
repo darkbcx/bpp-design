@@ -27,7 +27,7 @@ When working in this repository, Claude operates as a **collaborating architect*
 * Generate application code, framework scaffolding, ORM definitions, or API handlers.
 * Pick a programming language, framework, or database engine without explicit user direction.
 * Copy structures verbatim from `bitemycart` or `ion-specs`.
-* Introduce Beckn vocabulary (`descriptor`, `fulfillment`, `provider`, `item`, `on_search`, etc.) into domain artifacts.
+* Introduce Beckn vocabulary (`descriptor`, `fulfillment`, `provider`, `resource`, `offer`, `contract`, `on_select`, etc.) into domain artifacts.
 
 ### 1.4 What Claude Must Do
 
@@ -240,13 +240,13 @@ If any of these concerns appear outside the Bridge, that is a defect — regardl
 The Bridge has two translation paths, and they are intentionally asymmetric:
 
 * **Inbound (Beckn → Application).** The Bridge receives a Beckn message, verifies signatures, validates the payload against the schema for the declared protocol version, extracts the business intent, and invokes an Application use case with **domain-shaped** inputs. The Application Layer never sees raw Beckn JSON, never sees Beckn field names, and never knows which protocol version originated the call.
-* **Outbound (Application → Beckn).** The Application Layer produces a domain result. The Bridge projects that result into the appropriate Beckn message (`on_search`, `on_select`, `on_init`, `on_confirm`, etc.), enriches with protocol-level metadata (context envelope, schema version, signatures), and dispatches it on the network.
+* **Outbound (Application → Beckn).** The Application Layer produces a domain result. The Bridge projects that result into the appropriate Beckn message (`on_select`, `on_init`, `on_confirm`, `on_status`, `on_cancel`, etc.), enriches with protocol-level metadata (context envelope, schema version, signatures), and dispatches it on the network.
 
 The asymmetry is deliberate: outbound is *projection plus enrichment*; inbound is *validation plus extraction*. Neither direction is a mechanical inverse of the other.
 
 ### 4.3 Asynchronous Flow and Correlation
 
-Beckn is fundamentally an asynchronous, callback-driven protocol. A request (e.g., `search`) is acknowledged immediately; the substantive response (`on_search`) is delivered later via a callback to the originating participant. This shape is **the Bridge's problem**, not the Application Layer's.
+Beckn is fundamentally an asynchronous, callback-driven protocol. A request (e.g., `select`) is acknowledged immediately; the substantive response (`on_select`) is delivered later via a callback to the originating participant. This shape is **the Bridge's problem**, not the Application Layer's.
 
 The Bridge owns:
 
