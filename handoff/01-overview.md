@@ -10,7 +10,7 @@ This is a **Beckn Provider Platform (BPP)** — a multi-tenant marketplace that 
 - **Payment**: external to the BPP in v1 (BAP-side / network-mediated).
 - **Fulfillment**: self-fulfilled by each store in v1.
 
-> See: [ADR-0001](../decisions/0001-bpp-network-identity.md) for the BPP network identity decision.
+> See: [`/CLAUDE.md`](../CLAUDE.md) §2.1 for the canonical framing.
 
 ## 1.2 Goals (what this system does)
 

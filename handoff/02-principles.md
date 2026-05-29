@@ -2,6 +2,8 @@
 
 This section captures the rules that hold across the entire system. Every detail in later sections respects these. If something seems to conflict with these principles, look harder — the principle wins.
 
+> Source: [`/CLAUDE.md`](../CLAUDE.md) §2. The ADRs and design docs are downstream of these rules.
+
 ## 2.1 The Dependency Rule
 
 **Dependencies point inward, toward the domain.**
@@ -12,6 +14,8 @@ This section captures the rules that hold across the entire system. Every detail
 - When an inner layer needs an outward capability (persistence, sending email, calling an external service), it declares a **port** — an abstract contract — that an outer layer implements.
 
 A change in an outer layer must never force a change in an inner layer. A change in the Domain may legitimately require outer layers to adapt — that is the *correct* direction of pressure.
+
+> Source: CLAUDE.md §2.3.
 
 ## 2.2 Four logical layers
 
@@ -57,6 +61,8 @@ External caller → Interface adapter → Application use case → Domain logic
                                      External systems (DB, queue, ...)
 ```
 
+> Source: CLAUDE.md §2.4.
+
 ## 2.3 Seven bounded contexts
 
 Layers are *horizontal* (technical concerns). **Bounded contexts** are *vertical* (business concerns). A single context — say, Catalog — has its own Domain, its own Application use cases, and its own Infrastructure adapters. Layering and context decomposition are **complementary**, not competing.
@@ -77,7 +83,7 @@ The **Beckn Bridge is not a bounded context** — it is an adapter in the Interf
 
 **Storage-layer rule**: cross-context coupling is forbidden at the storage layer. No foreign keys across context boundaries; no shared tables; no direct joins across contexts. Cross-context references are by ID only.
 
-> ADRs 0001–0017 collectively establish the seven contexts.
+> Source: CLAUDE.md §2.5. ADRs 0001–0017 collectively establish the seven.
 
 ## 2.4 Inter-context communication
 
@@ -104,7 +110,7 @@ Events are emitted via a **transactional outbox** — written in the same DB tra
 - Identifiers crossing context boundaries are **opaque references**, not foreign keys.
 - Events describe *what happened* in domain terms — never transport, never UI, never Beckn vocabulary.
 
-> See: [ADR-0011](../decisions/0011-domain-events.md) (events / transactional outbox), [ADR-0012](../decisions/0012-cross-context-consistency.md) (consistency rules, inbox).
+> Source: CLAUDE.md §2.6, §5.16, §5.17. See [ADR-0011](../decisions/0011-domain-events.md) (events / transactional outbox), [ADR-0012](../decisions/0012-cross-context-consistency.md) (consistency rules, inbox).
 
 ## 2.5 Cross-context consistency
 
@@ -119,7 +125,7 @@ Multi-step flows spanning contexts (e.g., `Order.Initiate` calls Inventory + Pro
 
 **Failure handling**: subscribers retry with exponential backoff. After N attempts, an event is marked stuck; an operator reviews and either retries or skips with acknowledgement. No silent drops; no automatic skips.
 
-> See: [ADR-0012](../decisions/0012-cross-context-consistency.md).
+> Source: CLAUDE.md §5.17. See [ADR-0012](../decisions/0012-cross-context-consistency.md).
 
 ## 2.6 The domain stays Beckn-naive
 
@@ -132,6 +138,8 @@ The Beckn protocol is a *consumer* of the domain, not a *definer* of it.
 
 If a request would couple the domain to Beckn (e.g., "add a `descriptor` field to Product"), that's a defect. The Bridge is the only place protocol vocabulary lives. See [§3 Beckn integration](03-beckn-integration.md) for the Bridge's full responsibilities.
 
+> Source: CLAUDE.md §2.2 (guiding principle), §2.7 (Bridge position), §4 (full Bridge spec).
+
 ## 2.7 Deployment topology is deferred
 
 The architecture defines **logical** boundaries. Whether the system ships as a single deployable (modular monolith), as multiple services aligned to bounded contexts, or as something in between is a **downstream** decision driven by operational, team, and scale concerns.
@@ -141,6 +149,8 @@ What's **non-negotiable** regardless of topology:
 - Layer boundaries are enforced at the **source level**, not by network distance.
 - Context boundaries are enforced by **explicit contracts** (ports, events), not by deployment.
 - The Beckn Bridge is **isolatable** — it must be possible to deploy or replace it independently.
+
+> Source: CLAUDE.md §2.9.
 
 ## 2.8 No-delete pattern for business entities
 
@@ -164,7 +174,7 @@ This applies system-wide:
 
 Right-to-erasure is handled via **PII scrubbing in place** (see [§5.6](05-cross-cutting.md) when drafted) — records are retained; PII fields are replaced with placeholders.
 
-> See: [ADR-0014](../decisions/0014-soft-delete-and-audit.md) (soft-delete pattern and Audit), [ADR-0015](../decisions/0015-pii-and-right-to-erasure.md) (PII handling).
+> Source: CLAUDE.md §5.19, §5.20. See [ADR-0014](../decisions/0014-soft-delete-and-audit.md) (soft-delete pattern and Audit), [ADR-0015](../decisions/0015-pii-and-right-to-erasure.md) (PII handling).
 
 ## 2.9 Authorization is universal and explicit
 

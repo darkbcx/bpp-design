@@ -1,6 +1,12 @@
 # BPP Design — Handoff Package
 
-This directory is the **consolidated design document** for the implementing team. It integrates the **17 Architecture Decision Records** ([`/decisions/`](../decisions/)) and the **six sub-design documents** ([`/design/`](../design/)) into a single navigable narrative organized for reading by an engineer building the system.
+This directory is the **consolidated design document** for the implementing team. It integrates:
+
+- The **architectural charter** ([`/CLAUDE.md`](../CLAUDE.md)) — principles and rules.
+- The **17 Architecture Decision Records** ([`/decisions/`](../decisions/)) — judgment calls with reasoning.
+- The **six sub-design documents** ([`/design/`](../design/)) — per-context detailed models.
+
+into a single navigable narrative organized for reading by an engineer building the system.
 
 ## Who this is for
 
