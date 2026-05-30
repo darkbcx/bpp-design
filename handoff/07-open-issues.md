@@ -249,7 +249,7 @@ A few of the deferrals above will likely land first. Sketches of how to add them
 2. New port `PaymentGatewayPort` in Order; called at `/confirm` to create/authorize/capture.
 3. Gateway webhook adapter drives `Order.payment_status` (replacing the external-signal model).
 4. New ADRs for: payment context boundaries, PCI-scope minimization, refund flow, webhook idempotency.
-5. Refund flow becomes the foundation for returns ([§7.2.6](#726-order--fulfillment-4_6)).
+5. Refund flow becomes the foundation for returns ([§7.2.6](#726-order--fulfillment-46)).
 
 ### Adding return / refund workflow
 
