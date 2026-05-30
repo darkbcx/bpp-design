@@ -2,7 +2,7 @@
 
 - **Status**: Draft
 - **Last updated**: 2026-05-28
-- **Backed by ADRs**: [ADR-0009](../decisions/0009-identity-and-external-idp.md) (this gap), [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md) (active store), [ADR-0008](../decisions/0008-localization-and-localizedtext.md) (locale)
+- **Backed by ADRs**: [ADR-0009](../decisions/0009-identity-and-external-idp.md) (this gap), [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md) (active store), [ADR-0008](../decisions/0008-localization-and-localizedtext.md) (locale), [ADR-0018](../decisions/0018-organization-tenancy.md) (active org), [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md) (User scope: tenant/platform only; buyers are not Users)
 
 ## Purpose
 
@@ -65,7 +65,8 @@ Attributes:
 | `created_at` | Timestamp |
 | `last_used_at` | Refreshed on any authenticated request |
 | `expires_at` | Idle timeout; default 30 days from `last_used_at` |
-| `active_store_id` | Nullable; per [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md) |
+| `active_org_id` | Nullable; per [ADR-0018](../decisions/0018-organization-tenancy.md). Required for tenant-scoped actions; null for System Admin / platform-scoped users in their no-tenant mode |
+| `active_store_id` | Nullable; per [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md). When set, must belong to the active Organization |
 | `device_label` | Optional human-readable device descriptor (e.g., "iPhone 14, Safari") |
 | `last_ip` | Last observed client IP (for security review) |
 
@@ -117,7 +118,8 @@ States: implicit (existence = active; absence = ended).
 Operations:
 - **Create** — at successful sign-in.
 - **Refresh `last_used_at`** — on each authenticated request.
-- **Set / clear `active_store_id`** — via the active-store switcher.
+- **Set / clear `active_org_id`** — via the active-Org switcher (per ADR-0018).
+- **Set / clear `active_store_id`** — via the active-store switcher within the active Org.
 - **End (sign-out, single)** — deletes the session.
 - **End-all (sign-out-everywhere)** — deletes all sessions for a User.
 
@@ -163,6 +165,7 @@ Idle expiry: Sessions where `last_used_at + idle_window < now` are considered ex
     - created_at = now
     - last_used_at = now
     - expires_at = now + 30d (configurable)
+    - active_org_id = null
     - active_store_id = null
     - device_label = derived from User-Agent
     - last_ip = client IP
@@ -217,7 +220,7 @@ Emit `UserProfileSynced` if any IdP-canonical field changed.
 **Read-side**
 - `GetUserById(user_id) → User`
 - `GetUserByEmail(email) → User | null` *(used by invitation reconciliation, Gap 12)*
-- `ResolveActorFromSession(session_id) → { user_id, active_store_id, status } | null` *(used by all contexts during authorization)*
+- `ResolveActorFromSession(session_id) → { user_id, active_org_id, active_store_id, status } | null` *(used by all contexts during authorization)*
 - `ListSessionsForUser(user_id) → [Session]` *(for the "your devices" UX)*
 
 ### Domain events emitted
@@ -238,7 +241,9 @@ Event delivery semantics owned by [Gap 13](../gaps/13-domain-events-design.md).
 
 ### How other contexts authenticate requests
 
-Every authenticated request through any first-party interface carries the Session cookie. The Application Layer of any context calls `ResolveActorFromSession(session_id)`; if it returns null or a `Disabled` user, the request is rejected. Otherwise, authorization continues with `(user_id, active_store_id)` per ADR-0002.
+Every authenticated request through any first-party interface carries the Session cookie. The Application Layer of any context calls `ResolveActorFromSession(session_id)`; if it returns null or a `Disabled` user, the request is rejected. Otherwise, authorization continues with `(user_id, active_org_id, active_store_id)` per ADR-0002 + ADR-0018.
+
+**Note**: per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md), Users are exclusively tenant/platform actors (Org Owners, Org Members, Store Admins, System Admins, platform-scoped). Buyers are NOT Users in our system — they're captured per-order with Beckn buyer references in the Order context.
 
 ## Beckn projection notes
 
