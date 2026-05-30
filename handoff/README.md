@@ -72,5 +72,5 @@ This package is authored section-by-section. Not all sections may exist yet.
 | §4 Bounded contexts | Drafted (README + 4.1–4.7) |
 | §5 Cross-cutting concerns | Drafted |
 | §6 Operational stance | Drafted |
-| §7 Open issues | Pending |
+| §7 Open issues | Drafted |
 | §8 References | Pending |
