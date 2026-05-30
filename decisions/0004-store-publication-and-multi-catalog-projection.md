@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
+- **Partially superseded by**: [ADR-0020](0020-default-catalog-mandatory.md) — §2 (Default Catalog opt-out membership) is replaced by mandatory membership
 - **Resolves gap**: [gaps/resolved/06-store-to-beckn-publication.md](../gaps/resolved/06-store-to-beckn-publication.md)
 - **Constrains**: [gaps/07-catalog-modeling-scope.md](../gaps/07-catalog-modeling-scope.md) — introduces `Catalog` as a first-class entity with default vs. additional semantics
 

@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-30
+- **Partially superseded by**: [ADR-0021](0021-pure-bpp-no-storefront.md) — §4 (Buyer polymorphism) and §8 (first-party Order use cases including `Order.Place`) are replaced; Buyer is Beckn-typed only, and the Bridge is the sole external entry
 - **Resolves gap**: [gaps/resolved/11-order-and-fulfillment-phasing.md](../gaps/resolved/11-order-and-fulfillment-phasing.md)
 - **Builds on**: every prior ADR — this is the integration ADR for the commerce track
 - **Sub-design**: [design/order.md](../design/order.md)

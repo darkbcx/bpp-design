@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
+- **Partially superseded by**: [ADR-0021](0021-pure-bpp-no-storefront.md) — the implicit "buyers as Users" accommodation is removed; User scope is tenant/platform only
 - **Resolves gap**: [gaps/resolved/01-identity-and-access-scope.md](../gaps/resolved/01-identity-and-access-scope.md)
 - **Builds on**: [ADR-0002](0002-authorization-tiers-and-matrix.md) (active store as a session attribute), [ADR-0008](0008-localization-and-localizedtext.md) (locale tags)
 - **Sub-design**: [design/identity.md](../design/identity.md)
