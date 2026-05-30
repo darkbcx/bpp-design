@@ -52,60 +52,180 @@ These properties are stable across any layout the host monorepo prefers.
 
 ## 2.3 Reference layout (one model)
 
-A concrete shape that satisfies all the Required properties. Adapt names to monorepo conventions.
+A concrete shape that satisfies all the Required properties. The BPP comprises **three distinct packages** within the host monorepo: the backend service, the Admin UI, and a shared contracts package. Adapt names to monorepo conventions.
+
+### Top-level
 
 ```
 <host-monorepo>/
-└── apps/bpp/                                  the BPP backend service package
-    ├── src/
-    │   ├── contexts/
-    │   │   ├── identity/                      §4.1 Identity context
-    │   │   ├── tenancy/                       §4.2 Tenancy
-    │   │   ├── catalog/                       §4.3 Catalog
-    │   │   ├── inventory/                     §4.4 Inventory
-    │   │   ├── promotion/                     §4.5 Promotion
-    │   │   ├── order/                         §4.6 Order
-    │   │   └── audit/                         §4.7 Audit
-    │   ├── bridge/                            §3 Beckn Bridge — sole protocol-aware zone
-    │   ├── shared/                            cross-context shared code (see §2.6)
-    │   │   ├── kernel/                        use-case envelope, base errors, result types
-    │   │   ├── value-objects/                 Money, LocalizedText, BCP47Tag, ISO4217Code, …
-    │   │   ├── domain-events/                 envelope schema, dispatcher, subscriber base
-    │   │   └── auth/                          AuthorizationPort + capability catalog
-    │   ├── platform-infra/                    third-party adapters consumed via ports
-    │   │   ├── db/                            connection pool, migration runner, base repository
-    │   │   ├── outbox-dispatcher/             dispatcher + LISTEN/NOTIFY wake
-    │   │   ├── idp/                           OIDC client adapter
-    │   │   ├── object-storage/                signed-URL provider
-    │   │   ├── email/                         email-sending adapter
-    │   │   ├── observability/                 OTel SDK + redacting logger wrapper
-    │   │   └── beckn-network/                 signing, registry client, CDS client (used by /bridge only)
-    │   ├── admin-api/                         first-party HTTP surface for the Admin UI
-    │   ├── composition-root.ts                wires DI container; binds ports to adapters
-    │   └── main.ts                            entry point
-    ├── migrations/
-    │   ├── 0001__initial.sql
-    │   ├── 0002__identity.sql
-    │   └── …
-    ├── tests/
-    │   ├── unit/                              domain + application unit tests
-    │   ├── integration/                       real-DB integration tests
-    │   └── e2e/                               end-to-end Beckn flow tests (Bridge against stub BAP)
-    ├── package.json
-    └── README.md
-
-apps/bpp-admin/                                Admin UI package (own deploy target)
-packages/bpp-contracts/                        Zod schemas shared between bpp and bpp-admin
+├── apps/
+│   ├── bpp/                                   backend service package — §2.3.1
+│   └── bpp-admin/                             Admin UI package — §2.3.2
+└── packages/
+    └── bpp-contracts/                         shared Zod schemas — §2.3.3
 ```
 
-Notes on this model:
+The three packages have distinct responsibilities and deploy targets. They communicate exclusively through `bpp-contracts/` (compile-time) and HTTP (runtime) — never via direct imports of each other's internals.
 
-- `contexts/` is the **vertical** decomposition (per business concern); inside each context is the **horizontal** layering.
+### 2.3.1 Backend package — `apps/bpp/`
+
+The BPP service. Implements the seven bounded contexts, the Beckn Bridge, and the first-party HTTP surface.
+
+```
+apps/bpp/
+├── src/
+│   ├── contexts/
+│   │   ├── identity/                          §4.1 Identity context
+│   │   ├── tenancy/                           §4.2 Tenancy
+│   │   ├── catalog/                           §4.3 Catalog
+│   │   ├── inventory/                         §4.4 Inventory
+│   │   ├── promotion/                         §4.5 Promotion
+│   │   ├── order/                             §4.6 Order
+│   │   └── audit/                             §4.7 Audit
+│   ├── bridge/                                §3 Beckn Bridge — sole protocol-aware zone
+│   ├── shared/                                cross-context shared code (see §2.6)
+│   │   ├── kernel/                            use-case envelope, base errors, result types
+│   │   ├── value-objects/                     Money, LocalizedText, BCP47Tag, ISO4217Code, …
+│   │   ├── domain-events/                     envelope schema, dispatcher, subscriber base
+│   │   └── auth/                              AuthorizationPort + capability catalog
+│   ├── platform-infra/                        third-party adapters consumed via ports
+│   │   ├── db/                                connection pool, migration runner, base repository
+│   │   ├── outbox-dispatcher/                 dispatcher + LISTEN/NOTIFY wake
+│   │   ├── idp/                               OIDC client adapter
+│   │   ├── object-storage/                    signed-URL provider
+│   │   ├── email/                             email-sending adapter
+│   │   ├── observability/                     OTel SDK + redacting logger wrapper
+│   │   └── beckn-network/                     signing, registry client, CDS client (used by /bridge only)
+│   ├── admin-api/                             first-party HTTP surface for the Admin UI
+│   ├── composition-root.ts                    wires DI container; binds ports to adapters
+│   └── main.ts                                entry point
+├── migrations/
+│   ├── 0001__initial.sql
+│   ├── 0002__identity.sql
+│   └── …
+├── tests/
+│   ├── unit/                                  domain + application unit tests
+│   ├── integration/                           real-DB integration tests
+│   └── e2e/                                   end-to-end Beckn flow tests (Bridge against stub BAP)
+├── package.json
+└── README.md
+```
+
+Notes:
+
+- `contexts/` is the **vertical** decomposition (per business concern); inside each context is the **horizontal** layering (see §2.4).
 - `shared/` is for code that's genuinely **cross-context kernel** — not a junk drawer. New entries here require justification.
 - `platform-infra/` holds **third-party adapters** (DB pool, IdP client, OTel SDK). These are stateless / global and are wired into the DI container at app startup. Each context's own adapters live in its own `infrastructure/` folder (see §2.4).
 - `bridge/` is a sibling of `contexts/`. It calls **Application-Layer use cases** from any context but never imports their internal types.
 - `admin-api/` is the first-party HTTP surface — also calls Application-Layer use cases. **It cannot import from `bridge/`** and vice versa ([§2.4.4 of handoff](../handoff/02-principles.md)).
-- The Admin UI lives in a **separate package** (`apps/bpp-admin/`). Sharing happens through `packages/bpp-contracts/`.
+
+### 2.3.2 Frontend package — `apps/bpp-admin/`
+
+The Admin UI. Single-page application, authenticated-only, no SEO. The URL hierarchy mirrors the org/store path from [§5.1.5 of handoff](../handoff/05-cross-cutting.md): `/orgs/<org-slug>/stores/<store-slug>/...`.
+
+```
+apps/bpp-admin/
+├── src/
+│   ├── routes/                                TanStack Router file-based route tree
+│   │   ├── __root.tsx                         shell layout (header, sidebar)
+│   │   ├── index.tsx                          / — sign-in landing
+│   │   ├── orgs/
+│   │   │   ├── index.tsx                      /orgs — switcher
+│   │   │   └── $orgSlug/
+│   │   │       ├── route.tsx                  active-Org guard (loader)
+│   │   │       ├── index.tsx                  Org dashboard
+│   │   │       ├── members.tsx
+│   │   │       ├── invitations.tsx
+│   │   │       └── stores/
+│   │   │           ├── index.tsx              store list
+│   │   │           └── $storeSlug/
+│   │   │               ├── route.tsx          active-Store guard (loader)
+│   │   │               ├── index.tsx          store dashboard
+│   │   │               ├── catalog/
+│   │   │               ├── inventory.tsx
+│   │   │               ├── vouchers.tsx
+│   │   │               ├── orders.tsx
+│   │   │               └── audit.tsx
+│   │   └── platform/                          System Admin + Platform-scoped routes
+│   │       ├── categories.tsx                 PlatformCategory taxonomy
+│   │       ├── matrix.tsx                     role → capability matrix
+│   │       └── audit.tsx                      cross-tenant audit search
+│   ├── features/                              feature folders — one per bounded context
+│   │   ├── identity/                          sign-in, session, profile
+│   │   ├── tenancy/                           org, store, members, invitations
+│   │   ├── catalog/                           products, variants, categories, media
+│   │   ├── inventory/                         stock dashboards, adjustments
+│   │   ├── promotion/                         vouchers, usage reports
+│   │   ├── order/                             order list, detail, fulfillment actions
+│   │   └── audit/                             audit log viewer
+│   ├── components/
+│   │   ├── ui/                                shadcn/ui-generated primitives (you own these)
+│   │   └── layout/                            cross-feature layout components
+│   ├── lib/                                   shared utilities
+│   │   ├── api-client.ts                      typed API client (e.g., Hono RPC if Hono confirmed)
+│   │   ├── auth.ts                            session helpers; redirects for unauth
+│   │   ├── locale.ts                          LocalizedText resolver helpers
+│   │   ├── format.ts                          Money + date formatters (Intl-based)
+│   │   └── query-keys.ts                      TanStack Query key factory
+│   ├── hooks/                                 cross-feature React hooks
+│   ├── styles/
+│   │   └── globals.css                        Tailwind base + custom CSS variables
+│   ├── main.tsx                               entry point
+│   └── router.tsx                             TanStack Router instance setup
+├── public/                                    static assets served as-is
+├── index.html                                 Vite entry
+├── vite.config.ts
+├── tailwind.config.ts
+├── tsconfig.json
+├── package.json
+└── README.md
+```
+
+Notes:
+
+- **Feature folders mirror backend bounded contexts.** `features/<context>/` holds the components, queries, and mutations for that context. Keeps the frontend's mental model aligned with the backend's.
+- **Cross-feature imports are discouraged.** A feature consumes other features only through shared `lib/` utilities or, where one feature truly needs another's read-side, via the backend (not by importing feature components). This mirrors the backend's bounded-context isolation, less strictly enforced.
+- **`components/ui/`** holds the shadcn/ui components copied into the repo. Treat them as owned code — modify freely; pull updates manually.
+- **`lib/api-client.ts`** is the single source of HTTP calls. Built on the backend's contract (Zod schemas from `bpp-contracts`); generated or wrapped per the chosen framework (e.g., Hono RPC if Hono confirmed). No `fetch()` calls outside this module.
+- **Type-safe routes**: TanStack Router infers URL params + loader return types. The `$orgSlug` and `$storeSlug` params surface as typed in components.
+- **`route.tsx` files** carry loaders that gate the route — e.g., the active-Org guard verifies the URL slug matches the session's `active_org_id` (per [§5.1.5 of handoff](../handoff/05-cross-cutting.md)) before children render.
+
+### 2.3.3 Contracts package — `packages/bpp-contracts/`
+
+Zod schemas shared between `apps/bpp/` (backend) and `apps/bpp-admin/` (frontend). One source of truth for request / response shapes and value-object parsers.
+
+```
+packages/bpp-contracts/
+├── src/
+│   ├── value-objects/                         Zod parsers for shared value objects
+│   │   ├── money.ts                           Money schema
+│   │   ├── localized-text.ts                  LocalizedText schema (invariant: 'id' key required)
+│   │   ├── bcp47.ts                           BCP47Tag branded schema
+│   │   ├── iso4217.ts                         ISO4217Code enum schema
+│   │   ├── email.ts
+│   │   └── id.ts                              opaque-ID branded schema
+│   ├── identity/                              per-context request / response schemas
+│   │   ├── sign-in.ts                         SignIn use-case input + output
+│   │   ├── get-current-user.ts
+│   │   └── …
+│   ├── tenancy/
+│   ├── catalog/
+│   ├── inventory/
+│   ├── promotion/
+│   ├── order/
+│   ├── audit/
+│   └── shared/                                cross-context envelopes (pagination, etc.)
+├── package.json
+└── tsconfig.json
+```
+
+Notes:
+
+- **No business logic.** Schemas, branded types, and Zod refinements only.
+- **No I/O.** Doesn't make HTTP calls; doesn't read from a DB.
+- **Per-use-case schemas** live alongside the context they belong to. Mirrors the backend's `contexts/<X>/` layout.
+- **Versioning**: published as part of the monorepo's build; both `apps/bpp/` and `apps/bpp-admin/` depend on it via workspace resolution.
+- **Adding a new use case** requires touching three places: `apps/bpp/contexts/<X>/application/use-cases/<name>.ts`, `packages/bpp-contracts/src/<X>/<name>.ts` (the schemas), and the consuming UI in `apps/bpp-admin/features/<X>/`. The contracts package is the bridge.
 
 ---
 
@@ -264,11 +384,12 @@ Adapters to third-party systems, consumed via ports declared in contexts:
 
 ### `packages/bpp-contracts/` (separate monorepo package)
 
-Zod schemas shared between `apps/bpp/` (the backend) and `apps/bpp-admin/` (the frontend). One source of truth for request / response shapes.
+Zod schemas shared between `apps/bpp/` (the backend) and `apps/bpp-admin/` (the frontend). Full structure detailed in [§2.3.3](#233-contracts-package--packagesbpp-contracts).
 
 - Per-use-case input + output schemas.
-- Value-object Zod parsers.
+- Value-object Zod parsers (`Money`, `LocalizedText`, etc.).
 - No business logic — schemas only.
+- No I/O.
 
 ---
 
@@ -452,16 +573,27 @@ The BPP package focuses on **the BPP itself**. Anything that's cross-app, operat
 
 ## Summary
 
-A layout that satisfies the architecture:
+A layout that satisfies the architecture, across **three packages**:
 
 ```
-apps/bpp/src/
+apps/bpp/src/                                                      backend service
 ├── contexts/<X>/{domain,application,infrastructure,interfaces}/   one folder per bounded context
 ├── bridge/                                                        sole protocol-aware zone
 ├── shared/{kernel,value-objects,domain-events,auth}/              cross-context kernel
 ├── platform-infra/                                                third-party adapters
 ├── admin-api/                                                     first-party HTTP surface
 └── composition-root.ts                                            DI wiring at startup
+
+apps/bpp-admin/src/                                                Admin UI
+├── routes/                                                        TanStack Router file-based routes
+├── features/<context>/                                            feature folders mirror backend contexts
+├── components/{ui,layout}/                                        shadcn/ui + cross-feature
+├── lib/                                                           api client, auth, locale, format helpers
+└── router.tsx                                                     TanStack Router setup
+
+packages/bpp-contracts/src/                                        shared Zod schemas
+├── value-objects/                                                 Money, LocalizedText, etc.
+└── <context>/<use-case>.ts                                        per-use-case schemas
 ```
 
 With lint rules enforcing the dependency rule and the context boundaries. Whatever the host monorepo's conventions dictate for filenames and exact folder placement, **the relationships in this section don't move**.
