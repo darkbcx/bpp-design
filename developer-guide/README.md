@@ -15,6 +15,19 @@ The BPP described in this repository is planned to land **inside a larger monore
 
 In each section, look for **Required:** and **Lean (v1):** labels. Required items don't move; Leans do.
 
+## Reuse across projects
+
+The same Required / Lean split makes this guide reusable as a **template across multiple BPP projects**. The same architecture (handoff/ + ADRs) can be instantiated multiple times — for different markets, teams, or product variants — with different tooling per project.
+
+Per-project, the following sections should be revisited:
+
+- **`01-stack.md` decisions D0–D9.** All ten are project-specific. Even the four currently marked "Confirmed for v1" (awilix, Drizzle, shadcn/ui, React Hook Form) are *recommended starting picks*, not architectural commitments — a different project may pick differently (NestJS, Prisma, Mantine, TanStack Form, etc.).
+- **`02-repo-layout.md` reference layout.** The structure (one folder per bounded context; Bridge as sibling; `shared/` + `platform-infra/`) survives; specific names and the host monorepo's workspace conventions are project-specific.
+- **`08-deployment.md`** is written as a standalone-v1 reference deployment. Each project replaces it with its own deploy story.
+- **Compliance regime + locale defaults.** This design assumes Indonesia PDP + default locale `id`. Different markets need adjustment (GDPR, CCPA, different default locale, different data residency).
+
+The **Required** items in each section don't move per project — they're architecture-imposed. Only the **Lean** / **Confirmed** picks change.
+
 ## How this relates to the rest of the repo
 
 | Doc | Layer | Stability |
