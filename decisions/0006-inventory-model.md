@@ -8,7 +8,7 @@
 
 ## Context
 
-[ADR-0005](0005-catalog-and-product-modeling.md) established the Catalog as owning *what the product is* — Products, Variants, attributes, categories, media. The sibling context — Inventory — owns *is it purchasable right now*: stock, reservations, owner-controlled availability flags. Without this model, the storefront can't answer "can the buyer buy this?", the Bridge can't project accurate availability into catalogs published to CDS or `/on_select` quotes, and order placement ([Gap 11](../gaps/11-order-and-fulfillment-phasing.md)) has no place to commit stock changes.
+[ADR-0005](0005-catalog-and-product-modeling.md) established the Catalog as owning *what the product is* — Products, Variants, attributes, categories, media. The sibling context — Inventory — owns *is it purchasable right now*: stock, reservations, owner-controlled availability flags. Without this model, the storefront can't answer "can the buyer buy this?", the Bridge can't project accurate availability into catalogs published to CDS or `/on_select` quotes, and order placement ([Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md)) has no place to commit stock changes.
 
 Inventory was deliberately deferred until Catalog was concrete; the Variant entity from ADR-0005 is the natural anchor in Matrix mode, and Product is the anchor in Flat mode.
 
@@ -43,7 +43,7 @@ Inventory was deliberately deferred until Catalog was concrete; the Variant enti
 
 ### Movement history
 
-**Typed event stream** — chosen. Required by [Audit (Gap 16)](../gaps/16-soft-delete-and-audit.md); useful for analytics and reconciliation.
+**Typed event stream** — chosen. Required by [Audit (Gap 16)](../gaps/resolved/16-soft-delete-and-audit.md); useful for analytics and reconciliation.
 
 ### Cross-context comms
 
@@ -102,7 +102,7 @@ Lifecycle:
 | Active → Converted | Order `confirm` — `stock_count` is decremented atomically; reservation record retained |
 | Active → Released | Order cancelled, OR `expires_at` passed |
 
-The exact Beckn-flow trigger points are owned by [Gap 11](../gaps/11-order-and-fulfillment-phasing.md); this ADR commits only the primitive and its lifecycle. Reservation timeout values are operational configuration, not architectural.
+The exact Beckn-flow trigger points are owned by [Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md); this ADR commits only the primitive and its lifecycle. Reservation timeout values are operational configuration, not architectural.
 
 ### Stock-movement event log
 
@@ -124,7 +124,7 @@ Each event carries: actor, timestamp, item reference, signed delta (or null for 
 
 - **Storefront, Admin UI, Bridge** → query Inventory **synchronously** for current availability of one or more items.
 - **Order context** → calls Inventory's Application Layer to create / convert / release Reservations.
-- **Inventory** → emits `StockMovement` events. Subscribers include Audit ([Gap 16](../gaps/16-soft-delete-and-audit.md)) and any future read-side projections.
+- **Inventory** → emits `StockMovement` events. Subscribers include Audit ([Gap 16](../gaps/resolved/16-soft-delete-and-audit.md)) and any future read-side projections.
 - **Catalog → Inventory** subscription: Inventory subscribes to Catalog's product/variant lifecycle events:
   - `ProductCreated` / `ProductVariantAdded` → Inventory creates a `StockLevel` with `stock_count=0`, `purchasable=true`.
   - `ProductArchived` / `ProductVariantRemoved` → Inventory marks the corresponding `StockLevel` as `Inactive`. The record is retained for history; no new reservations or sales are accepted against it.
@@ -143,10 +143,10 @@ What this commits to:
 - The Inventory context contains: `StockLevel`, `Reservation`, plus the `StockMovement` event log. Three entities; one event stream.
 - Inventory is store-scoped — single logical inventory per store.
 - Stock decrement happens **only** via Reservation conversion at order confirm. Direct stock writes are limited to `Corrected` (manual adjustment) and `Received` (receiving).
-- The Order context ([Gap 11](../gaps/11-order-and-fulfillment-phasing.md)) is the primary consumer of Reservations. The Bridge orchestrates the Beckn-side timing.
+- The Order context ([Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md)) is the primary consumer of Reservations. The Bridge orchestrates the Beckn-side timing.
 - The Bridge queries Inventory synchronously when projecting availability into catalogs (for `/catalog/publish` to CDS) and into `/on_select` quotes; availability values are computed on demand.
 - Inventory subscribes to Catalog's product/variant lifecycle events. This is the first context-to-context event subscription declared in the design.
-- Audit ([Gap 16](../gaps/16-soft-delete-and-audit.md)) ingests `StockMovement` events.
+- Audit ([Gap 16](../gaps/resolved/16-soft-delete-and-audit.md)) ingests `StockMovement` events.
 - The `availability_flag` placeholder on `ProductVariant` from ADR-0005 is **removed** — availability lives in `StockLevel.purchasable`. [`design/catalog.md`](../design/catalog.md) is updated accordingly; ADR-0005's deferral note ("final shape decided in Gap 08") is honored.
 
 What this defers:
@@ -171,5 +171,5 @@ What this makes harder:
 - [gaps/resolved/08-inventory-boundary.md](../gaps/resolved/08-inventory-boundary.md)
 - [ADR-0005](0005-catalog-and-product-modeling.md) — defines the inventory anchors (Product / ProductVariant)
 - [design/catalog.md](../design/catalog.md) — updated to reflect availability moving to Inventory
-- Related gaps: [09](../gaps/09-pricing-and-promotions.md) (Pricing), [11](../gaps/11-order-and-fulfillment-phasing.md) (Order/Fulfillment — Reservation triggers), [13](../gaps/13-domain-events-design.md) (Domain events), [16](../gaps/16-soft-delete-and-audit.md) (Audit)
+- Related gaps: [09](../gaps/resolved/09-pricing-and-promotions.md) (Pricing), [11](../gaps/resolved/11-order-and-fulfillment-phasing.md) (Order/Fulfillment — Reservation triggers), [13](../gaps/resolved/13-domain-events-design.md) (Domain events), [16](../gaps/resolved/16-soft-delete-and-audit.md) (Audit)
 - `ion-specs` — Beckn v2 `Resource` / `Offer` quantity and availability concepts

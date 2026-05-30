@@ -203,4 +203,4 @@ What this makes harder:
 - [gaps/resolved/13-domain-events-design.md](../gaps/resolved/13-domain-events-design.md)
 - [design/events.md](../design/events.md) — full envelope, outbox shape, dispatcher, naming registry, event catalog
 - [ADR-0002](0002-authorization-tiers-and-matrix.md) (actor model with impersonation), [ADR-0003](0003-store-lifecycle-and-state-machine.md), [ADR-0004](0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](0005-catalog-and-product-modeling.md), [ADR-0006](0006-inventory-model.md), [ADR-0007](0007-pricing-tax-and-vouchers.md), [ADR-0008](0008-localization-and-localizedtext.md) (LocalizedText in payloads), [ADR-0009](0009-identity-and-external-idp.md), [ADR-0010](0010-invitation-account-reconciliation.md)
-- Related gaps: [14](../gaps/14-cross-context-consistency.md), [16](../gaps/16-soft-delete-and-audit.md)
+- Related gaps: [14](../gaps/resolved/14-cross-context-consistency.md), [16](../gaps/resolved/16-soft-delete-and-audit.md)

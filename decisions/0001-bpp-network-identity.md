@@ -57,7 +57,7 @@ What this commits the system to:
 
 What this defers (does not decide):
 
-- The internal "Catalog" entity question — a store may internally have one or more catalogs of products. The shape of this entity is owned by [Gap 07 (Catalog modeling scope)](../gaps/07-catalog-modeling-scope.md). This ADR commits only to the *projection*: a store's products surface under its provider node.
+- The internal "Catalog" entity question — a store may internally have one or more catalogs of products. The shape of this entity is owned by [Gap 07 (Catalog modeling scope)](../gaps/resolved/07-catalog-modeling-scope.md). This ADR commits only to the *projection*: a store's products surface under its provider node.
 - Per-store reputation visibility — deferred to a later phase.
 - Operational specifics of registry registration (who, when, per environment) — owned by operations.
 

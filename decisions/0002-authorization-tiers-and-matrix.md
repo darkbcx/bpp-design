@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-05-28
 - **Resolves gap**: [gaps/resolved/02-platform-scoped-roles.md](../gaps/resolved/02-platform-scoped-roles.md)
-- **Partially resolves**: [gaps/03-authorization-and-capabilities.md](../gaps/03-authorization-and-capabilities.md) (questions 2, 3, 4 fully; question 1 partially)
+- **Partially resolves**: [gaps/03-authorization-and-capabilities.md](../gaps/resolved/03-authorization-and-capabilities.md) (questions 2, 3, 4 fully; question 1 partially)
 
 ## Context
 
@@ -77,7 +77,7 @@ The **role catalog** is system-defined at design time. Adding a new role is a fe
 - "Active store" is a **session-level attribute** identifying which store-scoped Membership (if any) is currently in effect.
 - The active store is chosen by an explicit UI switcher: setting the active store in the session, followed by an immediate redirect to a URL-scoped path (`/stores/<slug>/...`). The URL slug must match the session value on every request; mismatch is an authorization failure.
 - `active store = none` is a valid state, available only to **System Admins and platform-scoped users**. It is the mode in which they exercise platform-scope or system-scope authority. Pure store-scoped users never see this state.
-- The session storage mechanism (cookie, JWT, server-side record) is deferred to [Gap 01](../gaps/01-identity-and-access-scope.md). Authorization treats the active store as a logical session attribute.
+- The session storage mechanism (cookie, JWT, server-side record) is deferred to [Gap 01](../gaps/resolved/01-identity-and-access-scope.md). Authorization treats the active store as a logical session attribute.
 
 ### 5. Impersonation
 
@@ -104,11 +104,11 @@ What this commits the system to:
 What this defers:
 
 - Impersonation timeout values, session retention, and audit log retention — operational.
-- Session storage mechanism — [Gap 01](../gaps/01-identity-and-access-scope.md).
-- Audit schema and storage — [Gap 16](../gaps/16-soft-delete-and-audit.md). This ADR establishes the attribution requirement; the implementation lives there.
-- Decision-exposure pattern (predicate functions, policy objects, ABAC service) — implementation detail; remains open in [Gap 03](../gaps/03-authorization-and-capabilities.md).
-- Negative permissions (explicit denies) — remains open in [Gap 03](../gaps/03-authorization-and-capabilities.md). Default assumption: model is purely additive unless that ADR overturns it.
-- Logging of denied authorization attempts — [Gap 03](../gaps/03-authorization-and-capabilities.md) and [Gap 16](../gaps/16-soft-delete-and-audit.md).
+- Session storage mechanism — [Gap 01](../gaps/resolved/01-identity-and-access-scope.md).
+- Audit schema and storage — [Gap 16](../gaps/resolved/16-soft-delete-and-audit.md). This ADR establishes the attribution requirement; the implementation lives there.
+- Decision-exposure pattern (predicate functions, policy objects, ABAC service) — implementation detail; remains open in [Gap 03](../gaps/resolved/03-authorization-and-capabilities.md).
+- Negative permissions (explicit denies) — remains open in [Gap 03](../gaps/resolved/03-authorization-and-capabilities.md). Default assumption: model is purely additive unless that ADR overturns it.
+- Logging of denied authorization attempts — [Gap 03](../gaps/resolved/03-authorization-and-capabilities.md) and [Gap 16](../gaps/resolved/16-soft-delete-and-audit.md).
 
 What this makes harder:
 
@@ -118,5 +118,5 @@ What this makes harder:
 ## References
 
 - [gaps/resolved/02-platform-scoped-roles.md](../gaps/resolved/02-platform-scoped-roles.md)
-- Related: [Gap 03 (Authorization & capabilities)](../gaps/03-authorization-and-capabilities.md), [Gap 16 (Audit)](../gaps/16-soft-delete-and-audit.md), [Gap 01 (Identity)](../gaps/01-identity-and-access-scope.md)
+- Related: [Gap 03 (Authorization & capabilities)](../gaps/resolved/03-authorization-and-capabilities.md), [Gap 16 (Audit)](../gaps/resolved/16-soft-delete-and-audit.md), [Gap 01 (Identity)](../gaps/resolved/01-identity-and-access-scope.md)
 - CLAUDE.md §5.3, §5.4, §5.5, §5.6, §5.7

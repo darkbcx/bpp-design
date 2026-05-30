@@ -62,7 +62,7 @@ End-of-life is a **state transition to a terminal-but-retained state**, not dele
 | Invitation | Accepted / Declined / Revoked / Expired (ADR-0010) |
 | Membership | Removed (record retained for audit) |
 
-Data is retained indefinitely (subject to PII compliance — [Gap 17](../gaps/17-pii-and-compliance.md)). Identifiers (slugs, internal IDs) are bound to their entity for life — no reuse after end-of-life.
+Data is retained indefinitely (subject to PII compliance — [Gap 17](../gaps/resolved/17-pii-and-compliance.md)). Identifiers (slugs, internal IDs) are bound to their entity for life — no reuse after end-of-life.
 
 **Operational entities — hard-deleted on schedule.**
 
@@ -176,4 +176,4 @@ What this makes harder:
 - [gaps/resolved/16-soft-delete-and-audit.md](../gaps/resolved/16-soft-delete-and-audit.md)
 - [design/audit.md](../design/audit.md) — full context model
 - [ADR-0002](0002-authorization-tiers-and-matrix.md) (actor + impersonator), [ADR-0003](0003-store-lifecycle-and-state-machine.md), [ADR-0005](0005-catalog-and-product-modeling.md), [ADR-0006](0006-inventory-model.md), [ADR-0007](0007-pricing-tax-and-vouchers.md), [ADR-0009](0009-identity-and-external-idp.md), [ADR-0010](0010-invitation-account-reconciliation.md), [ADR-0011](0011-domain-events.md), [ADR-0012](0012-cross-context-consistency.md), [ADR-0013](0013-first-party-idempotency.md)
-- Related gap: [17](../gaps/17-pii-and-compliance.md) (PII / compliance — refines audit retention and PII handling)
+- Related gap: [17](../gaps/resolved/17-pii-and-compliance.md) (PII / compliance — refines audit retention and PII handling)

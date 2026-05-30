@@ -65,7 +65,7 @@ These choices set how every cross-context feature is built. Get them wrong and t
 - **No formal Saga framework in v1.**
 - Multi-context flows are coordinated by **Application-Layer orchestration**: a use case in the orchestrating context (typically the one that owns the outcome) calls into other contexts via synchronous Application-Layer ports.
 - On failure mid-flow, **the orchestrating use case explicitly compensates** by calling reverse operations in already-affected contexts. Compensation is hand-coded per use case.
-- Will be revisited when [Gap 11](../gaps/11-order-and-fulfillment-phasing.md) lands — order/payment/fulfillment may justify a Saga concept.
+- Will be revisited when [Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md) lands — order/payment/fulfillment may justify a Saga concept.
 
 **Illustrative pattern** (will materialize in Gap 11):
 
@@ -150,4 +150,4 @@ What this makes harder:
 - [ADR-0011](0011-domain-events.md) (events, outbox, at-least-once)
 - [design/events.md](../design/events.md)
 - CLAUDE.md §2.3 (Dependency Rule), §2.6 (inter-context communication), §2.9 (deployment topology), §5.16 (domain events), §5.17 (this ADR's rules)
-- Related gaps: [11](../gaps/11-order-and-fulfillment-phasing.md), [15](../gaps/15-first-party-idempotency.md)
+- Related gaps: [11](../gaps/resolved/11-order-and-fulfillment-phasing.md), [15](../gaps/resolved/15-first-party-idempotency.md)

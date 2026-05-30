@@ -127,7 +127,7 @@ States: **`Active`**, **`Disabled`**. **No deletion.**
 
 `Disabled` Users cannot sign in (the auth flow rejects after IdP returns; an existing Session is terminated). Existing references (Memberships, orders, audit trails, voucher usage) remain attached to the User record. Disabling in our system has no effect on the user's IdP account.
 
-True right-to-erasure / PII scrubbing is deferred to [Gap 17](../gaps/17-pii-and-compliance.md).
+True right-to-erasure / PII scrubbing is deferred to [Gap 17](../gaps/resolved/17-pii-and-compliance.md).
 
 ### 8. Multi-IdP linking — deferred
 
@@ -155,7 +155,7 @@ What this defers:
 - **In-app push of profile edits back to IdP** — currently `preferred_locale` and `avatar_url` stay local.
 - **MFA enforcement requirements** — operational at the IdP layer.
 - **Account locking for suspicious activity** — operational.
-- **PII scrubbing / right-to-erasure** — [Gap 17](../gaps/17-pii-and-compliance.md).
+- **PII scrubbing / right-to-erasure** — [Gap 17](../gaps/resolved/17-pii-and-compliance.md).
 - **IdP-side webhook integration** (e.g., notify-on-deletion at IdP) — operational; future enhancement.
 - **Anonymous / guest checkout** — Order context concern, not Identity.
 
@@ -171,5 +171,5 @@ What this makes harder:
 - [gaps/resolved/01-identity-and-access-scope.md](../gaps/resolved/01-identity-and-access-scope.md)
 - [design/identity.md](../design/identity.md) — full entity model, flow diagrams, integration details
 - [ADR-0002](0002-authorization-tiers-and-matrix.md), [ADR-0008](0008-localization-and-localizedtext.md)
-- Constrains: [Gap 12](../gaps/12-invitation-account-reconciliation.md), [Gap 17](../gaps/17-pii-and-compliance.md)
+- Constrains: [Gap 12](../gaps/resolved/12-invitation-account-reconciliation.md), [Gap 17](../gaps/resolved/17-pii-and-compliance.md)
 - OpenID Connect Core 1.0

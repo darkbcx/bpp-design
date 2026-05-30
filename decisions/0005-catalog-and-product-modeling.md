@@ -71,7 +71,7 @@ Entity invariants:
 - **Category assignments** — zero or more `PlatformCategory` references; **at least one is required for the `Active` state** (entity-level guard on the Draft → Active transition).
 - **SKU** — optional; unique within store (case-insensitive) if set; nullable.
 - **Media** — ordered list of media references; first is primary; may be empty.
-- **Default price** — deferred to [Gap 09](../gaps/09-pricing-and-promotions.md).
+- **Default price** — deferred to [Gap 09](../gaps/resolved/09-pricing-and-promotions.md).
 
 Lifecycle:
 
@@ -130,12 +130,12 @@ No per-store category model. Store-private organization is served by additional 
 What this commits the system to:
 
 - The Catalog context contains: `Catalog` (ADR-0004), `CatalogMembership`, `Product`, `ProductAttribute` (Matrix variant definitions), `ProductVariant` (Matrix), `PlatformCategory`, `ProductCategoryAssignment`, `Media`.
-- **Inventory ([Gap 08](../gaps/08-inventory-boundary.md))** tracks availability per `Product` (Flat) or per `ProductVariant` (Matrix). The Variant entity is the Inventory anchor in Matrix mode.
-- **Pricing ([Gap 09](../gaps/09-pricing-and-promotions.md))** can have variant-level overrides in Matrix mode; in Flat mode each Product has its own price.
+- **Inventory ([Gap 08](../gaps/resolved/08-inventory-boundary.md))** tracks availability per `Product` (Flat) or per `ProductVariant` (Matrix). The Variant entity is the Inventory anchor in Matrix mode.
+- **Pricing ([Gap 09](../gaps/resolved/09-pricing-and-promotions.md))** can have variant-level overrides in Matrix mode; in Flat mode each Product has its own price.
 - The **Bridge** projects Products and (Matrix) Variants as Beckn `item`s under the provider. The exact projection of Matrix variants (nested under parent vs. flat with shared parent metadata) lives in the Bridge mapping registry.
 - **System Admin** has a new responsibility area: the platform Category taxonomy. New categories are an admin action; not store self-service.
 - **Cross-store deduplication** for discovery is explicitly a search-layer concern, not a domain concern. The domain has no notion of "same product, different store."
-- **Domain events** are emitted for all Catalog and Product mutations (full list in [design/catalog.md](../design/catalog.md)). The Bridge and Audit ([Gap 16](../gaps/16-soft-delete-and-audit.md)) consume them.
+- **Domain events** are emitted for all Catalog and Product mutations (full list in [design/catalog.md](../design/catalog.md)). The Bridge and Audit ([Gap 16](../gaps/resolved/16-soft-delete-and-audit.md)) consume them.
 - Mode is an immutable per-product attribute; the system rejects mode changes.
 
 What this defers:
@@ -144,8 +144,8 @@ What this defers:
 - **Digital vs. physical goods type taxonomy** — assume physical for v1; add a type discriminator later if digital goods enter scope.
 - **Search / discovery implementation** (full-text, facets) — read-side index, infrastructure concern.
 - **Media storage and file handling** — Infrastructure layer.
-- **Per-variant inventory and pricing details** — [Gaps 08](../gaps/08-inventory-boundary.md), [09](../gaps/09-pricing-and-promotions.md).
-- **Localization of strings** — [Gap 10](../gaps/10-localization-and-currency.md). Current entity attributes assume single-string fields.
+- **Per-variant inventory and pricing details** — [Gaps 08](../gaps/resolved/08-inventory-boundary.md), [09](../gaps/resolved/09-pricing-and-promotions.md).
+- **Localization of strings** — [Gap 10](../gaps/resolved/10-localization-and-currency.md). Current entity attributes assume single-string fields.
 - **Product reviews / ratings** — out of scope for v1.
 - **Bulk import / export** — implementation feature; not a design decision.
 
@@ -161,6 +161,6 @@ What this makes harder:
 - [gaps/resolved/07-catalog-modeling-scope.md](../gaps/resolved/07-catalog-modeling-scope.md)
 - [design/catalog.md](../design/catalog.md) — full entity model and contracts
 - [ADR-0001](0001-bpp-network-identity.md), [ADR-0002](0002-authorization-tiers-and-matrix.md), [ADR-0003](0003-store-lifecycle-and-state-machine.md), [ADR-0004](0004-store-publication-and-multi-catalog-projection.md)
-- Related gaps: [08](../gaps/08-inventory-boundary.md), [09](../gaps/09-pricing-and-promotions.md), [10](../gaps/10-localization-and-currency.md), [16](../gaps/16-soft-delete-and-audit.md)
+- Related gaps: [08](../gaps/resolved/08-inventory-boundary.md), [09](../gaps/resolved/09-pricing-and-promotions.md), [10](../gaps/resolved/10-localization-and-currency.md), [16](../gaps/resolved/16-soft-delete-and-audit.md)
 - `bitemycart` — reference for the Matrix model pattern (Product / ProductVariant / ProductAttribute / ProductAttributeValue)
 - `ion-specs` — Beckn `provider`, `category`, `item` concepts

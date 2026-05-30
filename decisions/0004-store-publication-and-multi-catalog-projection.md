@@ -4,7 +4,7 @@
 - **Date**: 2026-05-28
 - **Partially superseded by**: [ADR-0020](0020-default-catalog-mandatory.md) — §2 (Default Catalog opt-out membership) is replaced by mandatory membership
 - **Resolves gap**: [gaps/resolved/06-store-to-beckn-publication.md](../gaps/resolved/06-store-to-beckn-publication.md)
-- **Constrains**: [gaps/07-catalog-modeling-scope.md](../gaps/07-catalog-modeling-scope.md) — introduces `Catalog` as a first-class entity with default vs. additional semantics
+- **Constrains**: [gaps/07-catalog-modeling-scope.md](../gaps/resolved/07-catalog-modeling-scope.md) — introduces `Catalog` as a first-class entity with default vs. additional semantics
 
 ## Context
 
@@ -56,7 +56,7 @@ The resolution of granularity introduces the **Catalog** as a first-class entity
 - **Membership in the Default Catalog is opt-out.** Every product belonging to the store is included in the Default Catalog automatically. Owners can explicitly exclude specific products.
 - Stores may create **additional Catalogs** — named, scoped to the store, containing products from that store only. **Membership in additional Catalogs is opt-in**: products must be explicitly added.
 - A product may belong to **zero or more** catalogs simultaneously. A product excluded from the Default Catalog and not added to any additional Catalog still exists in the store but is invisible on the network.
-- The Catalog entity is owned by the **Catalog context**. Full catalog/product modeling (variants, attributes, media, taxonomies, lifecycle) is deferred to [Gap 07](../gaps/07-catalog-modeling-scope.md).
+- The Catalog entity is owned by the **Catalog context**. Full catalog/product modeling (variants, attributes, media, taxonomies, lifecycle) is deferred to [Gap 07](../gaps/resolved/07-catalog-modeling-scope.md).
 
 ### 3. Republication on catalog change
 
@@ -85,7 +85,7 @@ What this commits the system to:
 
 What this defers:
 
-- Full Catalog / Product entity model (variants, attributes, media, taxonomies, lifecycle states) — [Gap 07](../gaps/07-catalog-modeling-scope.md).
+- Full Catalog / Product entity model (variants, attributes, media, taxonomies, lifecycle states) — [Gap 07](../gaps/resolved/07-catalog-modeling-scope.md).
 - Reviewer feedback / rejection-reason flow — operational; out of scope here.
 - Per-Catalog publication toggle (a store with three catalogs that wants only two on Beckn) — not in scope. If needed later, add a `published` flag per catalog without altering the rest of this ADR.
 - Exact Beckn projection shape for multi-catalog providers — Bridge mapping registry; may evolve with protocol version.
@@ -102,5 +102,5 @@ What this makes harder:
 - [ADR-0001](0001-bpp-network-identity.md) — BPP identity, provider derivation
 - [ADR-0002](0002-authorization-tiers-and-matrix.md) — reviewer capability
 - [ADR-0003](0003-store-lifecycle-and-state-machine.md) — store states and republication mechanism
-- Constrains: [Gap 07](../gaps/07-catalog-modeling-scope.md)
+- Constrains: [Gap 07](../gaps/resolved/07-catalog-modeling-scope.md)
 - `ion-specs` — provider, catalog, category projection

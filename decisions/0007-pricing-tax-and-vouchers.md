@@ -149,7 +149,7 @@ Voucher application happens in the **Order context** at quote construction time.
 3. The discount is applied to the **sum of base prices** (pre-tax) in the cart. For percentage discounts, it's proportional across line items; for fixed-amount, it's distributed proportionally to base values.
 4. Tax is recomputed on each line item's discounted base; the quote shows the breakdown.
 5. At order `confirm`, Order calls `Promotion.RecordVoucherUsage(voucher, user, order, applied_amount)`. The usage record bumps `current_total_uses`.
-6. If the order is later cancelled or refunded, Order calls a release/refund flow — exact mechanism deferred to [Gap 11](../gaps/11-order-and-fulfillment-phasing.md).
+6. If the order is later cancelled or refunded, Order calls a release/refund flow — exact mechanism deferred to [Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md).
 
 **One voucher per order in v1.** No stacking.
 
@@ -187,7 +187,7 @@ What this defers:
 - **Customer-specific pricing tiers** (B2B, members, loyalty) — not in v1.
 - **Time-bound list-price changes** (sales windows on the catalog price itself) — not in v1; voucher `starts_at` / `expires_at` can approximate sale windows.
 - **Multi-currency catalogs** — explicitly out of scope.
-- **Voucher behavior during refund/cancel** — Order context concern ([Gap 11](../gaps/11-order-and-fulfillment-phasing.md)).
+- **Voucher behavior during refund/cancel** — Order context concern ([Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md)).
 - **Voucher stacking rules** — default is one per order; future work would relax this.
 - **Voucher distribution mechanics** (sharing codes via email, links, etc.) — operational; not domain.
 
@@ -202,6 +202,6 @@ What this makes harder:
 - [gaps/resolved/09-pricing-and-promotions.md](../gaps/resolved/09-pricing-and-promotions.md)
 - [ADR-0005](0005-catalog-and-product-modeling.md), [ADR-0006](0006-inventory-model.md)
 - [design/catalog.md](../design/catalog.md) — Product / Variant entity reference (updated to point here for pricing attributes)
-- Related gaps: [10](../gaps/10-localization-and-currency.md), [11](../gaps/11-order-and-fulfillment-phasing.md), [13](../gaps/13-domain-events-design.md), [16](../gaps/16-soft-delete-and-audit.md)
+- Related gaps: [10](../gaps/resolved/10-localization-and-currency.md), [11](../gaps/resolved/11-order-and-fulfillment-phasing.md), [13](../gaps/resolved/13-domain-events-design.md), [16](../gaps/resolved/16-soft-delete-and-audit.md)
 - `bitemycart` — voucher pattern reference (Voucher, CustomerVoucher, VoucherUsage)
 - `ion-specs` — Beckn v2 `Resource` / `Offer` (pricing), `Consideration` (quote breakdown) semantics

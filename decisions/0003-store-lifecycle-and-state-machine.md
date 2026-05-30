@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-05-28
 - **Resolves gap**: [gaps/resolved/04-store-lifecycle.md](../gaps/resolved/04-store-lifecycle.md)
-- **Partially resolves**: [gaps/06-store-to-beckn-publication.md](../gaps/06-store-to-beckn-publication.md) (questions 1, 2, 4, 5, 6 closed; 3 and 7 remain open)
+- **Partially resolves**: [gaps/06-store-to-beckn-publication.md](../gaps/resolved/06-store-to-beckn-publication.md) (questions 1, 2, 4, 5, 6 closed; 3 and 7 remain open)
 
 ## Context
 
@@ -124,12 +124,12 @@ What this commits the system to:
 
 What this defers:
 
-- **Activation criteria** for Draft → Active (review checklist, compliance gating, KYC) — [Gap 06](../gaps/06-store-to-beckn-publication.md).
+- **Activation criteria** for Draft → Active (review checklist, compliance gating, KYC) — [Gap 06](../gaps/resolved/06-store-to-beckn-publication.md).
 - **Moderation context** — what triggers suspension, the review workflow, suspension reason codes, notification flows. Not yet a gap; will be opened as a separate concern when needed.
-- **Per-product or per-category Beckn visibility** within an Active store — [Gap 06](../gaps/06-store-to-beckn-publication.md).
-- **Order-completion semantics** in non-Active states — [Gap 11](../gaps/11-order-and-fulfillment-phasing.md).
-- **`StoreStatusChanged` event schema and delivery guarantees** — [Gap 13](../gaps/13-domain-events-design.md).
-- **Audit schema** for transitions — [Gap 16](../gaps/16-soft-delete-and-audit.md). This ADR establishes the requirement; the schema lives there.
+- **Per-product or per-category Beckn visibility** within an Active store — [Gap 06](../gaps/resolved/06-store-to-beckn-publication.md).
+- **Order-completion semantics** in non-Active states — [Gap 11](../gaps/resolved/11-order-and-fulfillment-phasing.md).
+- **`StoreStatusChanged` event schema and delivery guarantees** — [Gap 13](../gaps/resolved/13-domain-events-design.md).
+- **Audit schema** for transitions — [Gap 16](../gaps/resolved/16-soft-delete-and-audit.md). This ADR establishes the requirement; the schema lives there.
 
 What this makes harder:
 
@@ -143,4 +143,4 @@ What this makes harder:
 - [ADR-0001](0001-bpp-network-identity.md) — establishes the Bridge as the sole wire-projection owner.
 - [ADR-0002](0002-authorization-tiers-and-matrix.md) — establishes platform vs. owner authority used in transition guards.
 - CLAUDE.md §4 (Bridge), §5 (Tenancy)
-- Related gaps: [06](../gaps/06-store-to-beckn-publication.md), [11](../gaps/11-order-and-fulfillment-phasing.md), [13](../gaps/13-domain-events-design.md), [16](../gaps/16-soft-delete-and-audit.md)
+- Related gaps: [06](../gaps/resolved/06-store-to-beckn-publication.md), [11](../gaps/resolved/11-order-and-fulfillment-phasing.md), [13](../gaps/resolved/13-domain-events-design.md), [16](../gaps/resolved/16-soft-delete-and-audit.md)
