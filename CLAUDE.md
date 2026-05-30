@@ -412,6 +412,7 @@ Publication on the Beckn network is **store-level**: an Active store appears as 
 * A product may belong to **zero or more** catalogs. A product in no catalog still exists in the store but is invisible on the network.
 * **All Catalogs project to Beckn.** BAPs see each catalog as a distinguishable grouping under the provider and may render any of them. The exact Beckn structure used for multi-catalog projection lives in the Bridge's mapping registry, not in the domain.
 * Catalog state changes (created, renamed, product added/removed, deleted) emit domain events; the Bridge re-projects the provider node accordingly, mirroring the republication mechanism from §5.8.
+* **Manual republication** is supported in addition to event-driven publishing ([ADR-0019](decisions/0019-manual-catalog-republication.md)). Store Admins and Org Owners can trigger `Store.RequestRepublish(store_id)` for a single store; Org Owners can trigger `Org.RequestRepublishAll(org_id)` for all stores in their Org. Both emit dedicated domain events that the Bridge subscribes to; the re-projection logic is the same as auto-trigger (idempotent). Rate limiting is operational, not architectural.
 * The full **Catalog / Product entity model** (variants, attributes, media, taxonomies, lifecycle) is in §5.10 and [`design/catalog.md`](design/catalog.md).
 
 **Activation flow.** Moving a Draft store to Active is a deliberate two-step:

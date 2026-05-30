@@ -68,7 +68,7 @@ This package is authored section-by-section. Not all sections may exist yet.
 | README (this file) | Drafted |
 | §1 Overview | Drafted |
 | §2 Architectural principles | Drafted |
-| §3 Beckn integration | Pending |
+| §3 Beckn integration | Drafted |
 | §4 Bounded contexts | Pending |
 | §5 Cross-cutting concerns | Pending |
 | §6 Operational stance | Pending |

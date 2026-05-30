@@ -183,6 +183,10 @@ Organizations ([ADR-0018](../decisions/0018-organization-tenancy.md)):
 - `tenancy.store_admin_assigned`
 - `tenancy.store_admin_unassigned`
 
+Manual catalog republication ([ADR-0019](../decisions/0019-manual-catalog-republication.md)):
+- `tenancy.store_republish_requested` — emitted by `Store.RequestRepublish`; carries `{ store_id, actor, reason? }`. The Bridge subscribes and re-projects the store's catalogs to CDS.
+- `tenancy.organization_republish_requested` — emitted by `Org.RequestRepublishAll`; carries `{ org_id, actor, reason? }`. The Bridge subscribes and fans out to per-store republishes.
+
 Invitations ([ADR-0010](../decisions/0010-invitation-account-reconciliation.md), now Org-level per [ADR-0018](../decisions/0018-organization-tenancy.md)):
 - `tenancy.invitation_created`
 - `tenancy.invitation_accepted`

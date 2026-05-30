@@ -214,6 +214,10 @@ All mutating use cases call `requireCapability(...)` per ADR-0016 and accept an 
 - `Org.AssignStoreAdmin(store_id, user_id, by_actor) → StoreAdminAssignment` — Capability: `org.assign_store_admin`. User must be an Active Org Member.
 - `Org.UnassignStoreAdmin(store_id, user_id, by_actor)` — Capability: `org.unassign_store_admin`.
 
+**Manual catalog republication** ([ADR-0019](../decisions/0019-manual-catalog-republication.md)):
+- `Store.RequestRepublish(store_id, by_actor, reason?)` — Capability: `store.republish`. Emits `tenancy.store_republish_requested`; the Bridge re-projects the store's catalogs to CDS.
+- `Org.RequestRepublishAll(org_id, by_actor, reason?)` — Capability: `org.republish_all_stores` (Org Owner only). Emits `tenancy.organization_republish_requested`; the Bridge fans out to all stores in the Org.
+
 **Read-side:**
 - `Org.ListMyOrganizations(user_id) → [Organization]` — drives the Org switcher UI.
 - `Org.ListMembers(org_id, by_actor) → [OrganizationMember]`
