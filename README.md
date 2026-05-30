@@ -4,11 +4,13 @@ Architecture and design for a multi-tenant **Beckn Provider Platform (BPP)** —
 
 > **Status: design complete; ready for implementation.** This is still a design-stage repository — there is no application code here. What's been delivered is the **integrated design package** the implementing team will build from.
 
-## Two audiences, two entry points
+## Two audiences
 
 ### If you are building this system
 
-**Start at [`handoff/README.md`](handoff/README.md).** That's the reading view written for engineers joining the implementing team: a 1–2 hour first read that covers what the system is, the architectural rules, each bounded context, the cross-cutting patterns, and the deferred work.
+Read both, in order:
+
+**1. [`handoff/README.md`](handoff/README.md)** — the **architecture reading view**: a 1–2 hour first read covering what the system is, the architectural rules, each bounded context, the cross-cutting patterns, and the deferred work. Tells you *what* to build and *why*.
 
 ```
 handoff/
@@ -25,7 +27,23 @@ handoff/
 └── 08-references.md            ADR + design-doc index
 ```
 
-The handoff is the **reading view**. For deep "why?" questions, it cross-references the ADRs.
+**2. [`developer-guide/README.md`](developer-guide/README.md)** — the **implementation reading view**: tells you *with what* (stack), *when* (phases), and *how* (conventions, testing, runbooks). Stack-agnostic where it can be; v1 leans where it helps.
+
+```
+developer-guide/
+├── README.md                   reader's guide + conventions
+├── 01-stack.md                 chosen technologies (D0-D9 resolved)
+├── 02-repo-layout.md           BPP package structure (backend, frontend, contracts)
+├── 03-dev-setup.md             local environment + IdP sandbox + seed data
+├── 04-conventions.md           naming, use-case envelope, errors, logging
+├── 05-phases.md                dependency-ordered build plan (Phase 0–8)
+├── 06-context-playbooks/       per-context implementation skeletons (one per bounded context)
+├── 07-testing.md               per-layer testing posture
+├── 08-deployment.md            standalone-v1 reference deployment
+└── 09-runbooks.md              33 operational procedures
+```
+
+Both reading views cross-reference each other and the ADRs.
 
 ### If you are evolving the design itself
 
@@ -41,7 +59,8 @@ The full artifact map and authoring rules are in [§10 of `CLAUDE.md`](CLAUDE.md
 
 | Path | Audience | Role |
 |---|---|---|
-| [`handoff/`](handoff/) | Implementing team | Integrated reading view — the design package |
+| [`handoff/`](handoff/) | Implementing team | Architecture reading view — *what* + *why* |
+| [`developer-guide/`](developer-guide/) | Implementing team | Implementation reading view — *with what* + *when* + *how* |
 | [`CLAUDE.md`](CLAUDE.md) | Design contributors | Architectural charter (rules, principles, working agreement) |
 | [`decisions/`](decisions/) | Anyone asking "why?" | 21 ADRs — the historical record of judgment calls |
 | [`design/`](design/) | Anyone needing schemas | 7 sub-design docs — full entity models per context |
@@ -57,7 +76,9 @@ For the long version, read [`handoff/01-overview.md`](handoff/01-overview.md).
 ## Status
 
 - **Design**: complete. 21 ADRs accepted; all original 17 design gaps resolved; 4 follow-on feature ADRs (Organization tenancy, manual republication, Default Catalog mandatory, Pure-BPP scope) landed on top.
-- **Code**: not started. The implementing team begins from `handoff/`.
+- **Implementation guide**: complete. 9 docs + 8 per-context playbooks; 4 of 10 D-decisions confirmed for v1 (D0 awilix, D1 Drizzle, D2 shadcn/ui, D2a React Hook Form); the rest deferred to the host monorepo when it lands.
+- **Code**: not started. The implementing team begins from `handoff/` + `developer-guide/`.
+- **Host monorepo**: this BPP is planned to land inside a larger monorepo. The developer-guide is written to survive that merger — concrete tooling is presented as v1 leans, replaceable when the monorepo's conventions arrive.
 - **Compliance regime**: Indonesia PDP (UU 27/2022), GDPR-compatible by design.
 - **Protocol target**: Beckn v2 / ION; CDS-mediated discovery.
 
