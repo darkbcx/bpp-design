@@ -45,7 +45,7 @@ It is consumed by:
 A named, ordered container of Products within a store.
 
 Two kinds:
-- **Default Catalog** — exactly one per store; auto-created when the store is created; not deletable. Membership is **opt-out**: every product is included automatically; owners may exclude specific products.
+- **Default Catalog** — exactly one per store; auto-created when the store is created; not deletable. Membership is **mandatory** ([ADR-0020](../decisions/0020-default-catalog-mandatory.md)): every Product in the store is automatically and permanently a member. There is no exclusion mechanism; to hide a product from Beckn, change the Product's `status` (Draft or Archived).
 - **Additional Catalog** — created by store users; scoped to that store's products. Membership is **opt-in**: products must be explicitly added.
 
 A Product may belong to **zero or more** Catalogs simultaneously.
@@ -123,12 +123,10 @@ Attributes:
 
 ### CatalogMembership
 
-The many-to-many link between `Catalog` and `Product`, with semantics that depend on whether the Catalog is the Default Catalog:
+Tracks `Product` membership in **additional Catalogs only** ([ADR-0020](../decisions/0020-default-catalog-mandatory.md)):
 
-- **For the Default Catalog**: an *exclusion* record. Absence means the product is included; presence means it is excluded.
-- **For an additional Catalog**: an *inclusion* record. Presence means the product is included.
-
-(The implementation may unify these as one table with a kind flag, or split — that's an Infrastructure decision.)
+- **For the Default Catalog**: no row required. Default membership is implicit and mandatory — every store Product is a member.
+- **For an additional Catalog**: an *inclusion* record (presence = member). Opt-in.
 
 ### Media
 
@@ -223,10 +221,8 @@ Managed by System Admins. Transitions: created → Active → Deprecated. Deleti
 - `CreateCatalog(store, name)`
 - `RenameCatalog(catalog_id, new_name)`
 - `DeleteCatalog(catalog_id)` *(additional Catalog only)*
-- `IncludeProductInCatalog(catalog_id, product_id)`
-- `RemoveProductFromCatalog(catalog_id, product_id)`
-- `ExcludeProductFromDefaultCatalog(store, product_id)`
-- `RestoreProductInDefaultCatalog(store, product_id)`
+- `IncludeProductInCatalog(catalog_id, product_id)` *(additional Catalog only; the Default Catalog has implicit, mandatory membership per [ADR-0020](../decisions/0020-default-catalog-mandatory.md))*
+- `RemoveProductFromCatalog(catalog_id, product_id)` *(additional Catalog only)*
 
 **System Admin actors:**
 - `CreatePlatformCategory(parent_id, name)`
@@ -256,8 +252,7 @@ Categories:
 
 Catalogs:
 - `CatalogCreated`, `CatalogRenamed`, `CatalogDeleted`
-- `ProductIncludedInCatalog`, `ProductRemovedFromCatalog`
-- `ProductExcludedFromDefaultCatalog`, `ProductRestoredInDefaultCatalog`
+- `ProductIncludedInCatalog`, `ProductRemovedFromCatalog` *(additional Catalogs only — the Default Catalog has mandatory implicit membership; no add/remove events per [ADR-0020](../decisions/0020-default-catalog-mandatory.md))*
 
 Media:
 - `ProductMediaUpdated`, `ProductVariantMediaUpdated`

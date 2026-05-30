@@ -240,14 +240,14 @@ Categories:
 - `catalog.platform_category_moved`
 - `catalog.platform_category_deprecated`
 
-Store catalogs ([ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md)):
+Store catalogs ([ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0020](../decisions/0020-default-catalog-mandatory.md)):
 - `catalog.store_catalog_created`
 - `catalog.store_catalog_renamed`
 - `catalog.store_catalog_deleted`
-- `catalog.product_included_in_catalog`
-- `catalog.product_removed_from_catalog`
-- `catalog.product_excluded_from_default_catalog`
-- `catalog.product_restored_in_default_catalog`
+- `catalog.product_included_in_catalog` — additional Catalogs only
+- `catalog.product_removed_from_catalog` — additional Catalogs only
+
+(Per [ADR-0020](../decisions/0020-default-catalog-mandatory.md), Default Catalog membership is mandatory and implicit; no exclude/include events exist for it.)
 
 ### Inventory context
 

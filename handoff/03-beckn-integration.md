@@ -89,6 +89,19 @@ Key v2 entities the Bridge maps to and from:
 
 **Domain stays naive of all these names.** They live in the Bridge's mapping registry (§3.7).
 
+### 3.4.1 Multi-catalog projection — one store, many catalogs
+
+A subtlety in the v2 model worth flagging: **a single store may have multiple internal catalogs, and all of them project to the network**. Per [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md):
+
+- A store has **exactly one Default Catalog**, auto-created with the store. **Mandatory membership** ([ADR-0020](../decisions/0020-default-catalog-mandatory.md)): every Product in the store is automatically and permanently a member; there is no exclusion mechanism. To hide a product from Beckn, change the Product's lifecycle state (Draft or Archived).
+- A store may also have **additional Catalogs** — named, scoped to that store (e.g., "Summer Collection", "Bestsellers"). **Opt-in membership** — products are added explicitly.
+- Every Product is always in the Default Catalog and may additionally be in zero or more additional Catalogs.
+- **All catalogs project to Beckn.** Each appears as a distinct wire `Catalog` object, **each carrying the same `Provider`** (the store). BAPs see distinguishable groupings under the same provider and may render any of them.
+
+Example: a store with three internal catalogs (Default + "Summer Collection" + "Bestsellers") publishes **three wire `Catalog` objects** to CDS — same `Provider` repeated in each, different `resources` and `offers` per catalog. The Bridge's mapping registry handles the per-catalog identifier derivation (deterministic, stable for the catalog's lifetime).
+
+The domain (the Catalog context) owns the structure: which catalogs exist, which products belong to each, the Default vs. additional distinction. The Bridge's job is just to produce one wire Catalog object per internal catalog and post each to CDS. See [§4.3 Catalog](04-bounded-contexts/4.3-catalog.md) for the full domain model.
+
 ## 3.5 Handler set in v1
 
 What the BPP exposes and consumes in v1:

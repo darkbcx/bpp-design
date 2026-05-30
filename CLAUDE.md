@@ -407,7 +407,7 @@ Suspended → Paused is forbidden — owners cannot launder moderation through a
 
 Publication on the Beckn network is **store-level**: an Active store appears as exactly one `provider` node ([ADR-0004](decisions/0004-store-publication-and-multi-catalog-projection.md)). What appears under that provider is determined by the store's **Catalogs**.
 
-* A store has **exactly one Default Catalog**, auto-created with the store and not deletable. Membership is **opt-out**: every product belonging to the store is included automatically; owners can explicitly exclude specific products.
+* A store has **exactly one Default Catalog**, auto-created with the store and not deletable. Membership is **mandatory** ([ADR-0020](decisions/0020-default-catalog-mandatory.md)): every product belonging to the store is automatically and permanently a member. There is no exclusion mechanism — to hide a product from Beckn, change the Product's lifecycle state (Draft or Archived).
 * A store may create **additional Catalogs** — named, scoped to the store, containing products from that store only. Membership is **opt-in**: products are added explicitly.
 * A product may belong to **zero or more** catalogs. A product in no catalog still exists in the store but is invisible on the network.
 * **All Catalogs project to Beckn.** BAPs see each catalog as a distinguishable grouping under the provider and may render any of them. The exact Beckn structure used for multi-catalog projection lives in the Bridge's mapping registry, not in the domain.
