@@ -32,7 +32,7 @@ It depends on:
 
 It is consumed by:
 - **Beckn Bridge** (§4) — projects to `provider`, `category`, and `item` on the wire.
-- **Storefront** — renders products to buyers.
+- **Admin UI** — renders the catalog to store owners/admins for management (the platform is a pure BPP with no buyer-facing storefront, per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)).
 - **Admin UI** — owners author products and catalogs.
 - **Inventory** ([Gap 08](../gaps/08-inventory-boundary.md)) — references Products / Variants for availability.
 - **Pricing** ([Gap 09](../gaps/09-pricing-and-promotions.md)) — references Products / Variants for prices.

@@ -13,7 +13,6 @@ Full design of the Order & Fulfillment bounded context — the entities, the sta
 - The Order state machine with transition guards.
 - Cross-context orchestration sequences (`Initiate`, `Confirm`, `Cancel`).
 - Beckn-flow walkthroughs (`/select` → `/on_select`, etc.).
-- First-party flow.
 - Bridge ↔ Order mapping (domain ↔ wire `Contract`).
 - Read-side queries.
 - Domain events emitted.
@@ -32,13 +31,14 @@ Order & Fulfillment is a bounded context (CLAUDE.md §2.5). It:
   - **Catalog** — resolve product/variant info, capture LocalizedText snapshots at quote time.
   - **Inventory** — Reserve, Convert, Release reservations ([ADR-0006](../decisions/0006-inventory-model.md)).
   - **Promotion** — ValidateVoucher, RecordVoucherUsage, RevertVoucherUsage ([ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md)).
-  - **Identity & Access** — resolve User identity for first-party flows; impersonation-aware actor for audit ([ADR-0009](../decisions/0009-identity-and-external-idp.md), [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md)).
+  - **Identity & Access** — impersonation-aware actor for audit on store-admin actions ([ADR-0009](../decisions/0009-identity-and-external-idp.md), [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md)). Note: buyers are not Users — see [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md).
 
 - **Is consumed by**:
-  - **Beckn Bridge** — translates wire messages into Order use case calls; projects Orders back to wire `Contract`.
-  - **Storefront** — first-party buyer flows.
-  - **Admin UI** — store admins fulfill / cancel.
+  - **Beckn Bridge** — the sole external entry point. Translates wire messages into Order use case calls; projects Orders back to wire `Contract`.
+  - **Admin UI** — Store Admins / Org Owners fulfill / cancel orders.
   - **Audit** — subscribes to Order events.
+
+The platform is a pure BPP per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md): there is no first-party buyer storefront. All buyer flows arrive via the Bridge from BAPs over the Beckn network.
 
 ## Concepts
 
@@ -50,7 +50,7 @@ Order & Fulfillment is a bounded context (CLAUDE.md §2.5). It:
 | `store_id` | Reference to the owning Store (Tenancy) |
 | `status` | `Created` \| `Initiated` \| `Confirmed` \| `Fulfilled` \| `Cancelled` \| `Expired` |
 | `quote` | Embedded `Quote` (see below) — captured at Created, immutable thereafter |
-| `buyer` | Polymorphic `Buyer` (User-typed or Beckn-typed) — see below |
+| `buyer` | Beckn `Buyer` — `{ bap_id, transaction_id, contact_snapshot? }`; see below. Always Beckn-typed per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md). |
 | `reservation_ids` | List of `Inventory.Reservation` IDs (populated at Initiated) |
 | `voucher_usage_id` | Optional `Promotion.VoucherUsage` ID (set at Confirmed) |
 | `payment_status` | `Pending` \| `Authorized` \| `Captured` \| `Refunded` \| `Failed` |
@@ -90,22 +90,26 @@ Order & Fulfillment is a bounded context (CLAUDE.md §2.5). It:
 
 **Snapshots are immutable per ADR-0017 §3.** Catalog price changes after issuance do not propagate.
 
-### Buyer (polymorphic value object)
+### Buyer (Beckn-typed value object)
+
+Per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md), the platform is a pure BPP — there is no first-party storefront and no User-typed buyer. The Buyer attribute is always Beckn-typed.
 
 ```
-type Buyer =
-  | { type: "user", user_id: string, contact_snapshot?: ContactSnapshot }
-  | { type: "beckn", bap_id: string, transaction_id: string, contact_snapshot?: ContactSnapshot }
+type Buyer = {
+  bap_id: string,
+  transaction_id: string,
+  contact_snapshot?: ContactSnapshot,
+}
 
 type ContactSnapshot = {
   name: LocalizedText,
-  email: string,        // captured at /init for Beckn; from User profile for first-party
+  email: string,        // captured from the BAP's /init payload
   phone: string,
   address: ShippingAddress,
 }
 ```
 
-Beckn buyers have `contact_snapshot == null` until `Initiated` (per v2's "no PII at /select").
+`contact_snapshot` is `null` at `Created` (per v2's "no PII at /select" rule) and is populated at `Initiated` from the inbound `/init` payload.
 
 ### ShippingAddress (value object)
 
@@ -123,7 +127,7 @@ Beckn buyers have `contact_snapshot == null` until `Initiated` (per v2's "no PII
 ```
 Store (Tenancy) ────< Order ─────< embedded Quote ───< embedded LineItem ──→ Product/Variant (Catalog) by ID
                        │
-                       ├── Buyer (User by ID, or Beckn-anonymous snapshot)
+                       ├── Buyer (Beckn — bap_id + transaction_id + optional contact snapshot)
                        ├── reservation_ids[] (Inventory.Reservation IDs)
                        └── voucher_usage_id  (Promotion.VoucherUsage ID, set at Confirmed)
 ```
@@ -138,9 +142,7 @@ Order references all other contexts by ID; never joins or imports their internal
           ▼
        Created  ── TTL passes ──►  Expired  (terminal)
           │                            │ (releases reservation if held)
-          │ Initiate (Beckn /init
-          │           or first-party
-          │           checkout)
+          │ Initiate (Beckn /init)
           ▼
        Initiated  ── TTL passes ──► Expired (terminal; releases reservation)
           │
@@ -163,17 +165,17 @@ Order references all other contexts by ID; never joins or imports their internal
 
 | From → To | Actor | Guard |
 |---|---|---|
-| (new) → Created | Buyer (Beckn or first-party) via Bridge / Storefront | Store is Active; items are Active and in some Catalog; voucher (if any) usable |
-| Created → Initiated | Buyer | Quote not expired; Inventory.Reserve succeeds; Voucher (if any) validates |
+| (new) → Created | BAP via Bridge (`/select`) | Store is Active; items are Active and in some Catalog; voucher (if any) usable |
+| Created → Initiated | BAP via Bridge (`/init`) | Quote not expired; Inventory.Reserve succeeds; Voucher (if any) validates |
 | Created → Expired | System (TTL) | `now >= valid_until` |
-| Created → Cancelled | Buyer or Platform | (No reservations held yet — just terminal) |
-| Initiated → Confirmed | Buyer | Quote not expired; Reservations still active |
+| Created → Cancelled | BAP via Bridge (`/cancel`) or Platform | (No reservations held yet — just terminal) |
+| Initiated → Confirmed | BAP via Bridge (`/confirm`) | Quote not expired; Reservations still active |
 | Initiated → Expired | System (TTL) | `now >= valid_until` (releases reservations) |
-| Initiated → Cancelled | Buyer or Platform | Releases reservations |
-| Confirmed → Cancelled | Buyer or Platform | Reverts voucher usage; marks payment Refunded |
-| Confirmed → (Confirmed + Preparing) | Store admin | capability `order.fulfillment.mark_preparing` |
-| Confirmed → (Confirmed + Shipped) | Store admin | capability `order.fulfillment.mark_shipped` |
-| Confirmed → Fulfilled | Store admin | capability `order.fulfillment.mark_fulfilled` |
+| Initiated → Cancelled | BAP via Bridge or Platform | Releases reservations |
+| Confirmed → Cancelled | BAP via Bridge or Platform | Reverts voucher usage; marks payment Refunded |
+| Confirmed → (Confirmed + Preparing) | Store Admin via Admin UI | capability `order.fulfillment.mark_preparing` |
+| Confirmed → (Confirmed + Shipped) | Store Admin via Admin UI | capability `order.fulfillment.mark_shipped` |
+| Confirmed → Fulfilled | Store Admin via Admin UI | capability `order.fulfillment.mark_fulfilled` |
 
 Forbidden: any other transition. No Returned state in v1.
 
@@ -193,27 +195,20 @@ Forbidden: any other transition. No Returned state in v1.
 
 ### Use cases exposed (Application Layer)
 
-**Beckn-driven (invoked by the Bridge):**
+**Beckn-driven (invoked by the Bridge from inbound BAP messages — the sole external entry point per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)):**
 - `Order.CreateQuote(store_id, items, voucher_code?, beckn_buyer_ref) → Order`
 - `Order.Initiate(order_id, contact_snapshot) → Order`
 - `Order.Confirm(order_id) → Order`
 - `Order.GetStatus(order_id) → Order`
 - `Order.Cancel(order_id, reason, by_actor) → Order`
 
-**First-party (storefront):**
-- `Order.CreateQuote(store_id, items, voucher_code?, user_id) → Order`
-- `Order.Place(order_id, contact_snapshot?) → Order` — combines Initiate + Confirm for first-party
-- `Order.Cancel(order_id, reason, by_actor) → Order`
-- `Order.GetStatus(order_id) → Order`
-
-**Fulfillment (store admin):**
+**Fulfillment (Store Admin via the Admin UI):**
 - `Order.MarkPreparing(order_id, by_actor)`
 - `Order.MarkShipped(order_id, by_actor, fulfillment_note?)`
 - `Order.MarkFulfilled(order_id, by_actor)`
 
-**Read-side (capability-gated):**
-- `Order.ListForStore(store_id, filter, acting_user) → [Order]`
-- `Order.ListForUser(user_id, filter, acting_user) → [Order]` — for first-party "my orders" UI
+**Read-side (capability-gated, for the Admin UI):**
+- `Order.ListForStore(store_id, filter, acting_user) → [Order]` — Store Admins and Org Owners see their store's orders.
 
 All mutating use cases support optional `idempotency_key` per ADR-0013. All use cases call `AuthorizationPort.requireCapability(...)` per ADR-0016.
 
@@ -252,8 +247,8 @@ Promotion gains a new use case `RevertVoucherUsage` (in support of cancellation)
 ### CreateQuote
 
 ```
-Order.CreateQuote(store_id, items, voucher_code?, buyer_ref):
-  require_capability(order.create_quote, scope=store_id)  // first-party: User has implicit cap; Beckn: Bridge principal capability
+Order.CreateQuote(store_id, items, voucher_code?, beckn_buyer_ref):
+  require_capability(order.create_quote, scope=store_id)  // Bridge principal capability (invoked from /select)
 
   resolved = Catalog.ResolveItems(store_id, items)
   if any item not Active or not in any catalog: raise ItemUnavailable
@@ -337,16 +332,6 @@ Order.Confirm(order_id):
   order.confirmed_at = now
   persist; write outbox row: order.confirmed
   return order
-```
-
-### Place (first-party, combined Initiate + Confirm)
-
-```
-Order.Place(order_id, contact_snapshot?):
-  # For first-party, Initiate and Confirm happen in one transaction
-  # since the buyer is already authenticated and signals commit directly.
-  Initiate(order_id, contact_snapshot ?? user.derive_contact_snapshot())
-  Confirm(order_id)
 ```
 
 ### Cancel
@@ -441,22 +426,6 @@ Order.Cancel(order_id, reason, by_actor):
 3. Bridge POSTs /on_cancel to BAP
 ```
 
-## First-party flow walkthrough
-
-```
-Storefront browse → user adds items to cart (client-side / session state)
-Storefront checkout button:
-  → Order.CreateQuote(store_id, items, voucher_code?, user_id)
-  → Render quote UI to user (totals, taxes, discount, shipping)
-User clicks Place Order:
-  → Order.Place(order_id, contact_snapshot?)  // Initiate + Confirm
-  → External payment flow (out of scope for v1)
-  → On payment confirm signal: payment_status = Captured
-Storefront shows "order confirmed" page
-```
-
-User can later cancel (pre-Fulfilled) via "My Orders" view.
-
 ## Bridge ↔ Order mapping
 
 Beckn v2 wire entities mapped to Order context:
@@ -492,7 +461,7 @@ Audit retention bucket: **financial — ~7 years** (per ADR-0014 §6). Long rete
 
 ## PII considerations
 
-Per ADR-0015 / `design/pii.md`, the following Order fields are subject to scrubbing on right-to-erasure for the affected User (first-party flows) or Beckn buyer (when erasure is requested by an identifiable BAP-side actor — process TBD):
+Per ADR-0015 / `design/pii.md`, the following Order fields are subject to scrubbing on right-to-erasure for the Beckn buyer (when erasure is requested by an identifiable BAP-side actor — process TBD):
 
 - `Order.buyer.contact_snapshot.name` (LocalizedText) — scrub per `replace_name`
 - `Order.buyer.contact_snapshot.email` — scrub per `replace_email`

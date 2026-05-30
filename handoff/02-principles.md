@@ -45,7 +45,7 @@ Innermost to outermost.
 
 The system's outward-facing surfaces. Three adapter families:
 
-- **First-party UI adapters** — admin/owner console, storefront.
+- **First-party UI adapter** — admin/owner console (the only first-party UI; the platform is a pure BPP with no buyer-facing storefront, per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)).
 - **First-party API adapters** — internal APIs consumed by our own front-ends.
 - **Beckn Bridge adapter** — receives and emits Beckn protocol messages.
 
@@ -133,8 +133,8 @@ The Beckn protocol is a *consumer* of the domain, not a *definer* of it.
 
 - The Domain **must not** reference, import, or know about Beckn or `ion-specs` in any form.
 - **No Beckn field name** (`provider`, `resource`, `offer`, `contract`, `descriptor`, `context`, `intent`, `commitment`, `consideration`, `performance`, …) appears outside the Beckn Bridge.
-- The system **must be operable, testable, and demonstrable without any Beckn participant in the loop**. Every store function (create, manage, publish, transact) must work via first-party interfaces alone.
-- The Beckn endpoint is *one* interface among several — alongside admin UI, storefront, and internal APIs. **It is not privileged.**
+- The system **must be operable, testable, and demonstrable without any Beckn participant in the loop**. Store management functions (create, manage, publish) are exclusively first-party via the Admin UI. Buyer transactions normally arrive via the Bridge from BAPs; the underlying Order use cases must be directly exercisable via the Application Layer for testing and demo.
+- The Beckn endpoint is one Interface Layer adapter — alongside the Admin UI and our internal APIs. **Architecturally it is not privileged** (the domain does not bend to Beckn's needs). In product terms, it is the only buyer-facing surface (per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)).
 
 If a request would couple the domain to Beckn (e.g., "add a `descriptor` field to Product"), that's a defect. The Bridge is the only place protocol vocabulary lives. See [§3 Beckn integration](03-beckn-integration.md) for the Bridge's full responsibilities.
 

@@ -22,12 +22,12 @@ This is a **Beckn Provider Platform (BPP)** — a multi-tenant marketplace that 
 - Lets stores **create vouchers** for promotional discounts.
 - Exposes each Active store's catalogs to the Beckn network via the **CDS** (so BAPs can discover and transact).
 - Handles the Beckn **transactional flow** (`select`, `init`, `confirm`, `status`, `cancel`) for buyer-initiated orders.
-- Lets first-party buyers shop through a **storefront**.
 - Maintains a tamper-evident **audit log** of all state changes.
 - Honors **right-to-erasure** for personal data while preserving business history.
 
 ## 1.3 Non-goals (what this system does NOT do in v1)
 
+- **Run a buyer-facing storefront.** The platform is a **pure BPP** (per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)) — buyers always come via BAPs over the Beckn network. The only first-party UI is the Admin UI for store and platform actors.
 - **Process payments.** No PCI scope. Payment is external; the BPP receives status signals only.
 - **Provide logistics.** Stores fulfill their own orders. No courier integration.
 - **Run a CDS.** The BPP publishes catalogs to a CDS — it does not operate one.
@@ -53,9 +53,10 @@ This is a **Beckn Provider Platform (BPP)** — a multi-tenant marketplace that 
             ┌──────────────────────────────────────────────────────────────┐
             │                  Interface Layer (BPP)                       │
             │  ┌──────────────────┐  ┌────────────────────────────────┐    │
-            │  │  Storefront +    │  │  Beckn Bridge                  │    │
-            │  │  Admin UI +      │  │  (mapping registry; sole       │    │
-            │  │  Internal APIs   │  │  protocol-aware adapter)       │    │
+            │  │   Admin UI +     │  │  Beckn Bridge                  │    │
+            │  │  Internal APIs   │  │  (mapping registry; sole       │    │
+            │  │  (first-party)   │  │  protocol-aware adapter; the   │    │
+            │  │                  │  │  only buyer-facing surface)    │    │
             │  └─────────┬────────┘  └────────────────┬───────────────┘    │
             └────────────┼────────────────────────────┼────────────────────┘
                          │                            │

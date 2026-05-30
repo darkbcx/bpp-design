@@ -84,9 +84,9 @@ Four logical layers, listed innermost to outermost. These are conceptual boundar
 
 4. **Interface Layer** — the *for whom*.
    * The system's outward-facing surfaces — the entry points by which external callers reach the Application Layer. Three distinct families, each its own adapter:
-     * **First-party UI adapters** — admin/owner console, storefront.
+     * **First-party UI adapter** — admin/owner console (the only first-party UI; the platform is a pure BPP with no buyer-facing storefront, per [ADR-0021](decisions/0021-pure-bpp-no-storefront.md)).
      * **First-party API adapters** — internal APIs consumed by our own front-ends.
-     * **Beckn Bridge adapter** — receives and emits Beckn protocol messages (detailed in 2.6).
+     * **Beckn Bridge adapter** — receives and emits Beckn protocol messages; the sole external surface for buyer transactions (detailed in 2.6).
    * Every adapter converts the outside world into Application-Layer calls and converts Application-Layer results back into the outside world's format.
    * No business logic. No persistence. No cross-adapter coupling.
 
@@ -149,14 +149,14 @@ What this implies:
 
 * The Bridge is an **adapter**, not a layer of its own and not a bounded context.
 * The Bridge **calls** the Application Layer; it never substitutes for it, bypasses it, or duplicates its work.
-* No other adapter (storefront, admin UI, internal API) ever imports anything from the Bridge.
+* No other adapter (admin UI, internal API) ever imports anything from the Bridge.
 * The Application Layer is **completely unaware** that the Bridge exists. It treats Bridge-originated calls identically to first-party-originated calls.
 
 The full responsibilities and constraints of the Bridge are detailed in section 4.
 
 ### 2.8 Beckn Is One Interface Among Several
 
-The Beckn endpoint is *one* surface, alongside the admin UI, the storefront, and our internal APIs. It is not privileged.
+The Beckn endpoint is *one* surface, alongside the admin UI and our internal APIs. It is the only buyer-facing surface; first-party UI is admin-only (per [ADR-0021](decisions/0021-pure-bpp-no-storefront.md)).
 
 Concretely:
 
@@ -290,7 +290,7 @@ Mappings are documented as a **mapping registry** — a first-class artifact in 
 * **No business rules.** "An item is available if stock > 0" is a domain rule. "An order can only be confirmed after init" is a domain rule. The Bridge does not encode such things; it asks the Application Layer.
 * **No direct persistence.** The Bridge invokes use cases; it does not read from or write to domain stores.
 * **No upward vocabulary leakage.** Nothing in the Application, Domain, or first-party interfaces imports anything from the Bridge. Beckn names stop at the Bridge boundary.
-* **No cross-adapter shortcuts.** The Bridge does not call into the storefront, the admin UI, or first-party APIs. All paths into the system go through the Application Layer.
+* **No cross-adapter shortcuts.** The Bridge does not call into the admin UI or first-party APIs. All paths into the system go through the Application Layer.
 * **No silent rewriting of domain semantics.** If a Beckn field implies a business meaning the domain does not represent, that is a domain-modeling conversation — not a Bridge workaround.
 
 ### 4.8 Testing Strategy (Conceptual)
@@ -448,7 +448,7 @@ The Inventory context owns *is the item purchasable right now* — stock count, 
 * **Reservations.** A `Reservation` is a temporary hold with `expires_at`. Created at order `init` (Beckn) or the equivalent first-party checkout step; **converted** (stock decremented atomically) at order `confirm`; **released** on cancel or timeout. The exact Beckn-flow trigger points are owned by Gap 11; the Reservation primitive itself is committed here.
 * **No multi-location, no backorders in v1.** Single logical inventory per store; cannot sell beyond stock.
 * **Stock-movement event log.** Every stock-affecting action emits a typed event (`Received`, `Sold`, `Returned`, `Corrected`, `Reserved`, `Released`, `PurchasableToggled`) carrying actor, timestamp, signed delta, and optional reason. Audit (Gap 16) ingests this stream.
-* **Communication.** Storefront, Admin UI, and Bridge query Inventory **synchronously** for availability. Order context calls Inventory's Application Layer to create/convert/release Reservations. Inventory subscribes to Catalog product/variant lifecycle events — creating StockLevels on creation, marking them `Inactive` on archive.
+* **Communication.** Admin UI and Bridge query Inventory **synchronously** for availability (the Bridge for `/on_select` quotes and catalog projections; the Admin UI for owner dashboards). Order context calls Inventory's Application Layer to create/convert/release Reservations. Inventory subscribes to Catalog product/variant lifecycle events — creating StockLevels on creation, marking them `Inactive` on archive.
 * Stock decrement happens **only** via Reservation conversion at order confirm, or via manual `Corrected` adjustments and `Received` receipts. Direct stock writes outside these paths are forbidden.
 
 ### 5.12 Pricing and Tax
@@ -488,7 +488,7 @@ Multi-language content is a v1 feature. Decisions in [ADR-0008](decisions/0008-l
   - **Voucher**: description.
   - **PlatformCategory**: name.
 * **Locale-neutral** regardless of language: identifiers, slugs, SKUs, voucher codes, `Money` amounts, currency codes, timestamps, status enums.
-* **`Store.supported_locales`** is an ordered list of BCP 47 tags the store declares it publishes in. Always includes `id`; default at creation `[id]`. Owners can add more. Used by the storefront language switcher, the Beckn provider descriptor, and Admin UX. Adding a locale does *not* require backfilling translations — missing locales fall back to `id`.
+* **`Store.supported_locales`** is an ordered list of BCP 47 tags the store declares it publishes in. Always includes `id`; default at creation `[id]`. Owners can add more. Used by the Beckn provider descriptor and Admin UX. Adding a locale does *not* require backfilling translations — missing locales fall back to `id`.
 * **Uniqueness checks** on translatable fields (e.g., `Product.name`) apply to the default-locale value (`id`). Cross-locale collisions are not checked.
 * **Bridge locale handling**: each Beckn response carries a per-request locale preference; the Bridge resolves each `LocalizedText` via `get(requested_locale)` and declares the chosen locale in the response. **No automatic translation**: an unauthored locale falls back to the default.
 * **PlatformCategory** labels are authored by System Admins as `LocalizedText`. Missing translations degrade gracefully to the default locale; admin notification of gaps is operational.
@@ -705,7 +705,7 @@ Stores no longer have a per-store Owner (per [ADR-0018](decisions/0018-organizat
 Use it to understand:
 
 * What concepts a small-retailer store typically needs (catalog structures, product variants, attributes, media, vouchers, orders).
-* How storefront and admin flows tend to be organized.
+* How admin flows tend to be organized in small-retailer e-commerce.
 * What edge cases real ecommerce systems handle (out-of-stock, variant pricing, discount semantics).
 
 Do **not**:

@@ -294,7 +294,7 @@ Order lifecycle ([ADR-0017](../decisions/0017-order-and-fulfillment.md)):
 | **`inventory-catalog-subscriber`** | `catalog.product_created`, `catalog.product_variant_added`, `catalog.product_archived`, `catalog.product_variant_removed`, `catalog.product_restored` | Auto-create / inactivate `StockLevel` per [ADR-0006](../decisions/0006-inventory-model.md) |
 
 Future subscribers (not in v1):
-- Storefront read-side projections (event-sourced product catalogs for fast queries).
+- Admin-UI read-side projections (event-sourced views for fast dashboard queries — admin-only; the platform has no buyer-facing storefront per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)).
 - Analytics ingestion.
 - Notification service (email reminders, etc.).
 
@@ -309,7 +309,7 @@ Per §2.6 and §4, domain events MUST NOT carry Beckn / transport / UI vocabular
 ## Open questions (within this design)
 
 - **Saga / process-manager pattern** for multi-event flows (e.g., order placement coordinating Inventory + Promotion + Payment) — [Gap 14](../gaps/14-cross-context-consistency.md).
-- **Storefront read models** (event-driven projections) — Infrastructure; future work.
+- **Admin-UI read models** (event-driven projections) — Infrastructure; future work.
 - **Exact retention values per context** — operational tuning; default 90 days.
 
 ## References

@@ -6,7 +6,7 @@ This section describes how the platform connects to the Beckn network. The integ
 
 ## 3.1 What the Bridge is (and isn't)
 
-The Bridge is a **specialized adapter in the Interface Layer** (per [§2.2](02-principles.md)). It is **not** a bounded context — it has no domain. It is **not** a layer of its own — it sits alongside the storefront and admin UI as another adapter, just one with very specific constraints.
+The Bridge is a **specialized adapter in the Interface Layer** (per [§2.2](02-principles.md)). It is **not** a bounded context — it has no domain. It is **not** a layer of its own — it sits alongside the Admin UI as another adapter (the platform is a pure BPP per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md); the Bridge is the sole buyer-facing surface).
 
 | Role | What it does |
 |---|---|
@@ -20,7 +20,7 @@ The Bridge is a **specialized adapter in the Interface Layer** (per [§2.2](02-p
 - Encode business rules ("an item is available if stock > 0" is a domain rule).
 - Read from or write to domain stores directly.
 - Leak Beckn vocabulary upward — nothing in Application, Domain, or first-party interfaces imports from the Bridge.
-- Call other adapters (no calls to the storefront or admin UI from inside the Bridge).
+- Call other adapters (no calls to the Admin UI or any first-party adapter from inside the Bridge).
 - Rewrite domain semantics to fit the protocol.
 
 No other adapter imports anything from the Bridge. The Application Layer is **unaware** that the Bridge exists — it treats Bridge-originated calls identically to first-party-originated calls.
