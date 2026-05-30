@@ -3,8 +3,8 @@
 This directory is the **consolidated design document** for the implementing team. It integrates:
 
 - The **architectural charter** ([`/CLAUDE.md`](../CLAUDE.md)) — principles and rules.
-- The **17 Architecture Decision Records** ([`/decisions/`](../decisions/)) — judgment calls with reasoning.
-- The **six sub-design documents** ([`/design/`](../design/)) — per-context detailed models.
+- The **21 Architecture Decision Records** ([`/decisions/`](../decisions/)) — judgment calls with reasoning.
+- The **seven sub-design documents** ([`/design/`](../design/)) — per-context detailed models.
 
 into a single navigable narrative organized for reading by an engineer building the system.
 
@@ -73,4 +73,4 @@ This package is authored section-by-section. Not all sections may exist yet.
 | §5 Cross-cutting concerns | Drafted |
 | §6 Operational stance | Drafted |
 | §7 Open issues | Drafted |
-| §8 References | Pending |
+| §8 References | Drafted |
