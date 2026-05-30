@@ -50,7 +50,7 @@ This guide quotes / references the handoff and ADRs; it doesn't restate the arch
 | 05-phases.md | Drafted |
 | 06-context-playbooks/ | Drafted (README + 6.1–6.8) |
 | 07-testing.md | Drafted |
-| 08-deployment.md | Pending |
+| 08-deployment.md | Drafted (standalone-v1 reference) |
 | 09-runbooks.md | Drafted |
 
 ## Conventions in this guide
