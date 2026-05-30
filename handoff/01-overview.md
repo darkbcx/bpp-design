@@ -2,7 +2,7 @@
 
 ## 1.1 What this platform is
 
-This is a **Beckn Provider Platform (BPP)** — a multi-tenant marketplace that aggregates small retailers and exposes them collectively to a Beckn network. The platform appears on the network as a **single BPP**; each retailer operates an independent **store** within the platform that projects onto the network as a Beckn `provider`.
+This is a **Beckn Provider Platform (BPP)** — a multi-tenant marketplace that aggregates small retailers and exposes them collectively to a Beckn network. The platform appears on the network as a **single BPP**; retailers operate **stores** within the platform, grouped under platform-internal **Organizations**. Each store projects onto the network as a Beckn `provider`; Organizations are invisible to Beckn.
 
 - **Target audience**: small retailers (Indonesia-focused at v1; the architecture is region-agnostic).
 - **Protocol**: Beckn v2 / ION, with discovery mediated by a **Catalog Discovery Service (CDS)**.
@@ -14,7 +14,9 @@ This is a **Beckn Provider Platform (BPP)** — a multi-tenant marketplace that 
 
 ## 1.2 Goals (what this system does)
 
-- Lets small retailers create and operate independent **stores** via a first-party admin UI.
+- Lets users create **Organizations** — platform-internal containers that group one or more stores under shared ownership and membership.
+- Lets the **Org Owner** invite users as **Org Members** and assign them as **Store Admins** of specific stores within the Org.
+- Lets users create and operate **stores** (within an Organization) via a first-party admin UI.
 - Lets each store **catalog** products with multi-language descriptions, tax-aware pricing, variant or flat SKU models, and multiple internal catalogs.
 - Lets stores **manage inventory** with stock counts and timed reservations.
 - Lets stores **create vouchers** for promotional discounts.
@@ -102,7 +104,12 @@ Terms used throughout this document.
 | **ION** | A specialization / extension of Beckn v2. The protocol variant this platform implements. |
 | **Bridge** | The specialized adapter in the BPP that owns all Beckn protocol concerns. The only place protocol vocabulary appears. |
 | **IdP** | Identity Provider — external authentication service. OIDC-compliant (Clerk, Auth0, Supabase Auth, Cognito, Keycloak, …). |
-| **Store** | A retailer's tenant within the platform. Has one Owner, zero or more Admins, one or more Catalogs. |
+| **Organization** | The platform-internal top-level tenant. Groups one or more Stores under shared ownership. Invisible to Beckn. |
+| **Org Owner** | The User with `Owner` role in an Organization (exactly one per Org). Plenary authority over the Org and all stores within. |
+| **Org Member** | A User with `Member` role in an Organization, joined via Org-level invitation. Has only `org.view` by default. |
+| **Store Admin** | An Org Member with administrative access to one or more specific stores within the Org via `StoreAdminAssignment`. Direct assignment by Org Owner — no invitation. |
+| **StoreAdminAssignment** | The link granting an Org Member Store Admin role on a specific store. Distinct from Org membership. |
+| **Store** | A tenant *within* an Organization. Has zero or more Store Admins (assigned by the Org Owner) and one or more Catalogs. Projects to Beckn as a `provider`. |
 | **Catalog (domain)** | A named collection of Products within a store. Each store has one Default Catalog + zero or more additional Catalogs. |
 | **Catalog (wire)** | The Beckn v2 `Catalog` entity. One per (store, internal-catalog) combination. Has one `Provider`. |
 | **Provider (wire)** | The Beckn v2 `Provider` entity — represents one of our stores on the network. |
@@ -114,7 +121,8 @@ Terms used throughout this document.
 | **Quote** | The captured-snapshot pricing within an Order at its `Created` state. TTL: 15 minutes default. |
 | **Reservation** | A timed hold on inventory created at `Order.Initiated`. Converted to a sale at `Order.Confirmed`. |
 | **Voucher** | A code-based discount; redeemed at `Order.Confirmed`; reversible on cancel. |
-| **Active store** | The session-level attribute identifying which of a user's store memberships is currently in effect. |
+| **Active Org** | Session attribute identifying which Organization the user is currently operating within. Required for tenant-scoped actions. |
+| **Active Store** | Session attribute identifying a specific store within the Active Org. Required for store-specific actions; optional for Org-level work. |
 | **LocalizedText** | Value object — a string with translations. Platform default locale: `id` (Bahasa Indonesia). |
 | **Money** | Value object: integer amount in minor units + ISO 4217 currency code. |
 | **Capability** | Action-level permission (`product.publish`, `voucher.disable`, …). |

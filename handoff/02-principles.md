@@ -72,7 +72,7 @@ The seven contexts:
 | Context | What it owns | Detail |
 |---|---|---|
 | **Identity & Access** | User identity (mirrored from IdP), Sessions, active-store binding, profile state. | [§4.1](04-bounded-contexts/4.1-identity.md) |
-| **Tenancy** | Stores, ownership, memberships, roles, invitations, the role-capability matrix. | [§4.2](04-bounded-contexts/4.2-tenancy.md) |
+| **Tenancy** | Organizations, Stores, OrganizationMembers, StoreAdminAssignments, invitations, ownership, the role-capability matrix. | [§4.2](04-bounded-contexts/4.2-tenancy.md) |
 | **Catalog** | Products, variants, attributes, categories, media, pricing structure, store catalogs. | [§4.3](04-bounded-contexts/4.3-catalog.md) |
 | **Inventory** | Stock and availability for catalog items; reservations. | [§4.4](04-bounded-contexts/4.4-inventory.md) |
 | **Promotion** | Vouchers and voucher usage. | [§4.5](04-bounded-contexts/4.5-promotion.md) |
@@ -160,6 +160,7 @@ This applies system-wide:
 
 | Entity | Terminal-retained state |
 |---|---|
+| Organization | Suspended (per ADR-0018) |
 | Store | Suspended / Paused (per ADR-0003) |
 | Product | Archived |
 | ProductVariant | Removed (retained if referenced by orders) |
@@ -168,7 +169,8 @@ This applies system-wide:
 | Voucher | Disabled (Expired / Exhausted derived) |
 | Invitation | Accepted / Declined / Revoked / Expired |
 | Order | Fulfilled / Cancelled / Expired |
-| Membership | Removed (record retained) |
+| OrganizationMember | Removed (record retained) |
+| StoreAdminAssignment | Removed (record retained) |
 
 **Default for any new entity**: business unless clearly operational. Adding deletion to a business entity requires a new ADR.
 
@@ -180,7 +182,7 @@ Right-to-erasure is handled via **PII scrubbing in place** (see [§5.6](05-cross
 
 Every Application-Layer use case starts with an explicit `requireCapability(name, scope)` call before any state mutation or side effect. There is no implicit authorization, no shared context that "everyone has access by default."
 
-The model has **three tiers** — System Admin, Platform-scoped, Store-scoped — and capabilities are **action-level** (e.g., `product.publish`, not `manage_products`). The matrix is grants-only; absence means denied.
+The model has **three tiers** — System Admin, Platform-scoped, Tenant-scoped — and capabilities are **action-level** (e.g., `product.publish`, not `manage_products`). Within Tenant-scope, sub-roles distinguish **Org Owner** (full Org authority) from **Store Admin** (assigned-store authority). The matrix is grants-only; absence means denied.
 
 See [§5.1](05-cross-cutting.md) (when drafted) and ADRs 0002 + 0016 for the full model.
 
