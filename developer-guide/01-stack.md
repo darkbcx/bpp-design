@@ -21,7 +21,7 @@ Per-layer technology choices, with rationale grounded in the architecture's cons
 ## 1.1 Backend language and framework
 
 **Confirmed:** TypeScript + Node.js (LTS).
-**Confirmed:** NestJS as the application framework.
+**Confirmed:** Hono as the HTTP framework.
 
 ### Why TypeScript + Node.js
 
@@ -29,19 +29,47 @@ Per-layer technology choices, with rationale grounded in the architecture's cons
 - **Type system enforces module boundaries.** TypeScript's structural typing + ESM module resolution lets us forbid cross-context internal-type imports at build time (per [§5.3.7](../handoff/05-cross-cutting.md)).
 - **Mature ecosystem** for OIDC (`openid-client`), Postgres (`pg`, Drizzle, Prisma), background jobs, and Beckn-friendly JSON tooling.
 
-### Why NestJS
+### Why Hono
 
-- **Module system aligns with bounded contexts.** Each context becomes a Nest `Module` with its own controllers (Interface Layer), services (Application Layer), and repository ports. Cross-context imports go through explicit `provider` injections — matching the ports + adapters pattern of [§2.4](../handoff/02-principles.md) of the handoff.
-- **DI primitives** make ports + adapters cheap: define an abstract token (`AuthorizationPort`), inject by token, bind to a concrete adapter at the module level. Swapping adapters (in-process → RPC) is a module-level configuration change.
-- **Built-in support for multiple transports** (HTTP, gRPC, message queues) without restructuring app code — useful if the Bridge later runs as a separate process or if we add a message bus.
-- **Decorator-based pipes / guards** map cleanly to `requireCapability` ([§5.1.4 of handoff](../handoff/05-cross-cutting.md)) and idempotency-key handling ([§5.4](../handoff/05-cross-cutting.md)).
+- **Lightweight, no magic.** Hono is closer to a routing library than a framework — controllers, middleware, validation, that's it. Less ceremony, faster startup, smaller bundles. Matches the handoff's "boring over clever, explicit over implicit" principle ([§8.2 of CLAUDE.md](../CLAUDE.md)).
+- **Type-safe end-to-end.** `c.req.valid()`, route inference, and **Hono RPC** generate a fully-typed client from server routes — the frontend (D8) can call backend endpoints with full TypeScript autocomplete and no separate OpenAPI codegen step. Pairs especially well with TanStack Router / Query.
+- **Runtime-agnostic.** Runs on Node, Bun, Deno, Cloudflare Workers, AWS Lambda. Keeps the door open for moving the Beckn Bridge to an edge runtime later ([§6.3.3 of handoff](../handoff/06-operational.md) — Bridge extraction).
+- **First-class Zod integration** via `@hono/zod-validator` and `@hono/zod-openapi` — request validation, response typing, and OpenAPI generation all from the same Zod schemas. The shared-with-frontend Zod schemas become the single source of truth.
+- **Middleware model fits the architecture.** `requireCapability` ([§5.1.4 of handoff](../handoff/05-cross-cutting.md)), idempotency-key handling ([§5.4](../handoff/05-cross-cutting.md)), and `correlation_id` propagation ([§5.2.1](../handoff/05-cross-cutting.md)) are middleware composed onto routes — clean, explicit, and inspectable.
 
-### Alternatives considered
+### Implications of choosing Hono over an opinionated framework
 
-- **Fastify + custom DI (tsyringe / awilix)** — lighter, more flexible, but requires hand-wiring the module-per-context discipline. More setup; less guardrails.
-- **Hono** — edge-first, very lightweight; pricier in DI / structure for an app of this size.
+Hono has no built-in module system or DI container. We get those discipline points elsewhere instead — they don't go away, just become **our** authoring choice rather than the framework's:
 
-Pick NestJS unless the team has strong reasons against decorators (some teams hate them); the tradeoff for the project's size and structure favors it.
+| Concern | Where it lives |
+|---|---|
+| Bounded-context boundaries | **Folder structure + lint rules** (see [`02-repo-layout.md`](02-repo-layout.md) when drafted). ESLint `import/no-restricted-paths` or `eslint-plugin-boundaries` forbids cross-context internal-type imports at build time. |
+| DI (ports + adapters wiring) | **DI container — Open (D0).** Lean is `awilix` (proxy-injection, no decorators) — see below. |
+| Application-Layer transactions | A thin **`use-case`** abstraction we author (validate → authorize → idempotency check → transaction → return). Per-context. ~50 lines of boilerplate avoided per route. |
+| Scheduled jobs | Library of our choice — see [§1.6 Scheduled work](#scheduled-work-cron-style). |
+| OpenAPI documentation | `@hono/zod-openapi` (generated from Zod schemas — no separate code). |
+
+This shifts work from "learn the framework's way" to "design our way" — appropriate for a system where the architecture is the asset.
+
+### Open (D0) — DI container
+
+Hono has no DI; we pick our own. The DI container holds adapter implementations (ports) and wires them into use cases.
+
+| Option | Pros | Cons |
+|---|---|---|
+| **awilix** (proposed) | Proxy injection — no decorators, no `reflect-metadata`; supports scoped containers (per-request); explicit registration | Less "magic" than tsyringe |
+| **tsyringe** | Decorator-based; familiar if from NestJS background | Needs `reflect-metadata` (slight overhead); decorator-config |
+| **No container; constructor wiring at app start** | Zero dependencies; fully explicit | Wiring grows linearly with context count; tests need manual stubs |
+
+Lean: **awilix**. It's the cleanest fit with Hono's no-decorator philosophy and supports per-request scopes (useful for `correlation_id`, active-Org, active-Store).
+
+### Alternatives considered (for framework)
+
+- **NestJS** — opinionated, decorator-heavy, module system + DI built in. Maps natively to bounded contexts. But heavier, slower startup, and the framework's choices crowd out the architecture's ([§2.4](../handoff/02-principles.md)) — fine in many projects, less ideal here.
+- **Fastify** — lightweight like Hono, mature ecosystem, but no built-in Zod/RPC story. Comparable to Hono otherwise.
+- **Express** — too unopinionated and aging.
+
+Hono wins on type safety (RPC + Zod) and on staying out of the architecture's way.
 
 ---
 
@@ -190,8 +218,15 @@ Lean for when this happens: **Redis Streams** (if Redis is already in the stack 
 
 ### Scheduled work (cron-style)
 
-- NestJS `@Schedule` decorators are fine for v1 (in-process).
-- Operational jobs needing cron: outbox pruning, inbox pruning, idempotency-record TTL cleanup, audit retention sweep, session expiry, stuck-events sweep.
+Hono is HTTP-only — scheduled jobs run in a sibling worker process or under a job library.
+
+| Option | Lean? | Why |
+|---|---|---|
+| **`node-cron`** in a sibling worker process | Lean (v1) | Trivial setup; lives in the same repo; can share DI container with the HTTP app |
+| **BullMQ** (Redis-backed) | If/when D5 adds Redis | Production-grade; retries; observability; needed once jobs get heavier |
+| **Postgres-native (`pg_cron` extension)** | If D7 supports it | Zero new infrastructure; managed Postgres providers usually expose this |
+
+Operational jobs needing scheduling: outbox pruning, inbox pruning, idempotency-record TTL cleanup, audit retention sweep, session expiry, stuck-events sweep. All small; `node-cron` covers v1.
 
 ---
 
@@ -255,8 +290,9 @@ The architecture is hosting-neutral. These leans are about minimizing v1 ops sur
 | **Integration tests** | **Vitest + Testcontainers** | Real Postgres per test suite; clean teardown |
 | **API contract tests** | **Vitest + Supertest** | Standard for HTTP layer |
 | **Pre-commit hooks** | **lint-staged** + **husky** | Format + lint on staged files |
-| **API documentation** | **NestJS Swagger module** for OpenAPI | Lives next to controllers |
-| **Build** | **Vite** (frontend) + **swc/tsup** (backend) | Fast builds; ESM-first |
+| **API documentation** | **`@hono/zod-openapi`** | OpenAPI generated from Zod schemas; no separate codegen |
+| **Type-safe RPC client** | **Hono RPC** (`hono/client`) | Frontend imports the backend's app type; full autocomplete; no codegen step |
+| **Build** | **Vite** (frontend) + **`tsup`** or `tsx` (backend) | Fast builds; ESM-first |
 
 ### Open (D9) — Turborepo or Nx or neither
 
@@ -289,6 +325,7 @@ Per [§5.7 of handoff](../handoff/05-cross-cutting.md) the platform default loca
 
 | D# | Topic | Section | Lean |
 |---|---|---|---|
+| D0 | DI container | [1.1](#11-backend-language-and-framework) | awilix |
 | D1 | Query / migration layer | [1.2](#12-database) | Drizzle ORM + `drizzle-kit` |
 | D2 | Component library | [1.3](#13-frontend-admin-ui) | shadcn/ui |
 | D2a | Form library | [1.3](#13-frontend-admin-ui) | TanStack Form |
