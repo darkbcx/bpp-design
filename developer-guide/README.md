@@ -46,7 +46,7 @@ This guide quotes / references the handoff and ADRs; it doesn't restate the arch
 | 01-stack.md | Drafted (Required + Lean structure; open decisions marked **D0–D9**) |
 | 02-repo-layout.md | Drafted |
 | 03-dev-setup.md | Pending |
-| 04-conventions.md | Pending |
+| 04-conventions.md | Drafted |
 | 05-phases.md | Drafted |
 | 06-context-playbooks/ | Pending |
 | 07-testing.md | Pending |
