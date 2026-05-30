@@ -6,6 +6,15 @@ The **implementation-side companion** to the [handoff package](../handoff/README
 
 You're an engineer on (or joining) the implementing team. You've read the handoff, understand the bounded contexts and cross-cutting patterns, and now you need to actually build the thing.
 
+## Monorepo context
+
+The BPP described in this repository is planned to land **inside a larger monorepo** that hosts other applications too. The monorepo doesn't currently dictate a specific framework or tool for the BPP, so this guide describes:
+
+- **Architecture-imposed requirements** — characteristics the implementation MUST have, derived from the handoff and the ADRs. These are stable across any monorepo conventions that arrive later.
+- **v1 reference leans** — concrete library / framework choices that satisfy the requirements for a standalone v1. They are **proposals**, not commitments — when the merger happens, monorepo-wide conventions may supersede them.
+
+In each section, look for **Required:** and **Lean (v1):** labels. Required items don't move; Leans do.
+
 ## How this relates to the rest of the repo
 
 | Doc | Layer | Stability |
@@ -46,8 +55,9 @@ This guide quotes / references the handoff and ADRs; it doesn't restate the arch
 
 ## Conventions in this guide
 
-- **Confirmed decision** — choice + rationale; not negotiable absent a new conversation.
-- **Open (Dn)** — proposed lean + alternatives; awaiting confirmation. Decisions are numbered for cross-reference.
-- **Open (deferred)** — not deciding yet; revisit at the phase that needs it.
+- **Required:** — architecture-imposed need (from the handoff / ADRs). Doesn't move regardless of stack.
+- **Lean (v1):** — proposed concrete tool / library for v1 standalone. May be superseded by monorepo conventions.
+- **Open (Dn):** — proposed lean + alternatives, numbered for cross-reference, awaiting your confirmation.
+- **Open (deferred):** — not deciding yet; revisit at the phase that needs it.
 
-When a decision becomes confirmed, replace **Open** with the choice and remove the alternatives from the body (keep them only if useful as "why-not" context).
+When a Lean is overridden by monorepo conventions, replace it inline and note the source. When an Open (Dn) is confirmed, fold the lean into Required or Lean as appropriate.

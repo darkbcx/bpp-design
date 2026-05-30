@@ -1,6 +1,11 @@
-# 1. Stack — chosen technologies and rationale
+# 1. Stack — requirements and reference choices
 
-Per-layer technology choices, with rationale grounded in the architecture's constraints. Where you've already chosen, the choice is **Confirmed**; where I've proposed a lean for you to confirm or override, it's marked **Open (Dn)**.
+This BPP is planned to land inside a larger monorepo (see `developer-guide/README.md` → "Monorepo context"). The monorepo doesn't currently dictate a specific framework or tool, so this section is structured in two layers:
+
+- **Required:** characteristics the implementation MUST have, derived from the [handoff](../handoff/README.md) and the [ADRs](../decisions/). These don't move regardless of which framework / library is eventually used.
+- **Lean (v1):** a concrete reference choice that satisfies the requirements — useful as a starting point for a standalone v1 deploy. May be superseded by monorepo conventions when the merger lands.
+
+Read the **Required** lines first. The **Lean** lines are proposals you can keep, swap, or drop.
 
 | Section | Topic |
 |---|---|
@@ -20,112 +25,109 @@ Per-layer technology choices, with rationale grounded in the architecture's cons
 
 ## 1.1 Backend language and framework
 
-**Confirmed:** TypeScript + Node.js (LTS).
-**Confirmed:** Hono as the HTTP framework.
+### Required
 
-### Why TypeScript + Node.js
+- **Language with a strong static type system.** Module boundaries between bounded contexts ([§2.4 of handoff](../handoff/02-principles.md), [§5.3.7](../handoff/05-cross-cutting.md)) must be enforceable at build time; runtime-only checks aren't sufficient.
+- **Capability for `LocalizedText`, `Money`, and other domain value objects to be expressed precisely.** The language needs first-class struct / record / branded-string types (per [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md), [ADR-0008](../decisions/0008-localization-and-localizedtext.md)).
+- **Ecosystem for OIDC, RDB transactions, and JSON-heavy protocol work.** Beckn is JSON-over-HTTP with signatures; the chosen runtime must have mature libraries for these.
+- **HTTP framework supporting middleware composition** for the cross-cutting concerns: `requireCapability` ([§5.1.4 of handoff](../handoff/05-cross-cutting.md)), idempotency keys ([§5.4](../handoff/05-cross-cutting.md)), `correlation_id` propagation ([§5.2.1](../handoff/05-cross-cutting.md)).
+- **Request validation that integrates with the domain's value-object definitions.** Schemas authored once should validate inbound requests, type outbound responses, and ideally be shared with the frontend.
+- **Dependency-injection capability** (built into the framework or composable as a separate library). Ports + adapters ([§2.4 of handoff](../handoff/02-principles.md)) require swapping concrete implementations at the module level.
 
-- **Shared types across frontend and backend.** Domain types (`Money`, `LocalizedText`, state enums) live in a shared package; frontend and backend speak the same vocabulary. This directly supports the handoff's "domain language over technical language" principle ([§8.2 of CLAUDE.md](../CLAUDE.md)).
-- **Type system enforces module boundaries.** TypeScript's structural typing + ESM module resolution lets us forbid cross-context internal-type imports at build time (per [§5.3.7](../handoff/05-cross-cutting.md)).
-- **Mature ecosystem** for OIDC (`openid-client`), Postgres (`pg`, Drizzle, Prisma), background jobs, and Beckn-friendly JSON tooling.
+### Lean (v1)
 
-### Why Hono
+- **Language**: TypeScript on Node.js (LTS).
+  - *Why a fit*: same-language fullstack (shared types between Admin UI and BPP); structural type system + ESM modules enforce context boundaries at build time; mature ecosystem for everything above.
+- **HTTP framework**: **Hono** (subject to monorepo convention).
+  - *Why a fit*: lightweight; middleware composition for the cross-cutting concerns; `@hono/zod-validator` + `@hono/zod-openapi` integrate Zod schemas as the single source of truth for validation + OpenAPI; type-safe client generation via Hono RPC pairs cleanly with the frontend.
+- **DI container**: **awilix** (proxy injection, no decorators) — **Open (D0)**.
+  - *Why a fit*: explicit registration; per-request scopes (useful for `correlation_id`, active-Org, active-Store); no `reflect-metadata` runtime dependency.
 
-- **Lightweight, no magic.** Hono is closer to a routing library than a framework — controllers, middleware, validation, that's it. Less ceremony, faster startup, smaller bundles. Matches the handoff's "boring over clever, explicit over implicit" principle ([§8.2 of CLAUDE.md](../CLAUDE.md)).
-- **Type-safe end-to-end.** `c.req.valid()`, route inference, and **Hono RPC** generate a fully-typed client from server routes — the frontend (D8) can call backend endpoints with full TypeScript autocomplete and no separate OpenAPI codegen step. Pairs especially well with TanStack Router / Query.
-- **Runtime-agnostic.** Runs on Node, Bun, Deno, Cloudflare Workers, AWS Lambda. Keeps the door open for moving the Beckn Bridge to an edge runtime later ([§6.3.3 of handoff](../handoff/06-operational.md) — Bridge extraction).
-- **First-class Zod integration** via `@hono/zod-validator` and `@hono/zod-openapi` — request validation, response typing, and OpenAPI generation all from the same Zod schemas. The shared-with-frontend Zod schemas become the single source of truth.
-- **Middleware model fits the architecture.** `requireCapability` ([§5.1.4 of handoff](../handoff/05-cross-cutting.md)), idempotency-key handling ([§5.4](../handoff/05-cross-cutting.md)), and `correlation_id` propagation ([§5.2.1](../handoff/05-cross-cutting.md)) are middleware composed onto routes — clean, explicit, and inspectable.
-
-### Implications of choosing Hono over an opinionated framework
-
-Hono has no built-in module system or DI container. We get those discipline points elsewhere instead — they don't go away, just become **our** authoring choice rather than the framework's:
-
-| Concern | Where it lives |
-|---|---|
-| Bounded-context boundaries | **Folder structure + lint rules** (see [`02-repo-layout.md`](02-repo-layout.md) when drafted). ESLint `import/no-restricted-paths` or `eslint-plugin-boundaries` forbids cross-context internal-type imports at build time. |
-| DI (ports + adapters wiring) | **DI container — Open (D0).** Lean is `awilix` (proxy-injection, no decorators) — see below. |
-| Application-Layer transactions | A thin **`use-case`** abstraction we author (validate → authorize → idempotency check → transaction → return). Per-context. ~50 lines of boilerplate avoided per route. |
-| Scheduled jobs | Library of our choice — see [§1.6 Scheduled work](#scheduled-work-cron-style). |
-| OpenAPI documentation | `@hono/zod-openapi` (generated from Zod schemas — no separate code). |
-
-This shifts work from "learn the framework's way" to "design our way" — appropriate for a system where the architecture is the asset.
+Other reasonable framework choices that satisfy the requirements: **Fastify**, **Express + ts-rest**, **NestJS** (heavier but ships DI + modules built in). If the monorepo standardizes on one of these, that supersedes the Hono lean — the architecture and the patterns translate.
 
 ### Open (D0) — DI container
 
-Hono has no DI; we pick our own. The DI container holds adapter implementations (ports) and wires them into use cases.
+Pick once and use consistently across contexts.
 
 | Option | Pros | Cons |
 |---|---|---|
-| **awilix** (proposed) | Proxy injection — no decorators, no `reflect-metadata`; supports scoped containers (per-request); explicit registration | Less "magic" than tsyringe |
-| **tsyringe** | Decorator-based; familiar if from NestJS background | Needs `reflect-metadata` (slight overhead); decorator-config |
+| **awilix** (lean) | No decorators; proxy injection; per-request scopes; explicit | Less "magic" than tsyringe |
+| **tsyringe** | Decorator-based; familiar to NestJS users | Needs `reflect-metadata`; decorator config |
 | **No container; constructor wiring at app start** | Zero dependencies; fully explicit | Wiring grows linearly with context count; tests need manual stubs |
 
-Lean: **awilix**. It's the cleanest fit with Hono's no-decorator philosophy and supports per-request scopes (useful for `correlation_id`, active-Org, active-Store).
+The pattern these implement — looking up a port by token, binding it to a concrete adapter at module load, swapping in tests — is the same regardless of library.
 
-### Alternatives considered (for framework)
+### Enforcement of architectural rules (regardless of framework)
 
-- **NestJS** — opinionated, decorator-heavy, module system + DI built in. Maps natively to bounded contexts. But heavier, slower startup, and the framework's choices crowd out the architecture's ([§2.4](../handoff/02-principles.md)) — fine in many projects, less ideal here.
-- **Fastify** — lightweight like Hono, mature ecosystem, but no built-in Zod/RPC story. Comparable to Hono otherwise.
-- **Express** — too unopinionated and aging.
+The handoff's discipline points need somewhere to live in code:
 
-Hono wins on type safety (RPC + Zod) and on staying out of the architecture's way.
+| Concern | Where it lives |
+|---|---|
+| Bounded-context boundaries | **Folder structure + lint rules.** ESLint `import/no-restricted-paths` or `eslint-plugin-boundaries` forbids cross-context internal-type imports at build time. See [`02-repo-layout.md`](02-repo-layout.md) (when drafted). |
+| Ports + adapters wiring | **DI container** (D0). Adapters registered at app startup; ports injected into use cases by token. |
+| Application-Layer use-case envelope | A thin in-house abstraction: `validate → authorize → idempotency check → transaction → return`. ~50 lines per route avoided. Lives in a shared `kernel` or `application` package. |
+| Outbox + inbox + idempotency table writes | Same transaction as the state mutation ([§5.2](../handoff/05-cross-cutting.md), [§5.3.6](../handoff/05-cross-cutting.md), [§5.4.4](../handoff/05-cross-cutting.md)). Implemented in the use-case envelope. |
+| Authorization decisions | `requireCapability(name, scope)` invoked at the top of every mutating use case ([§5.1.4 of handoff](../handoff/05-cross-cutting.md)). Implemented as middleware or as the first line of the use case body. |
+| `correlation_id` propagation | Per-request scope in the DI container; passed to outbox writes; carried into subscriber jobs. |
+
+These belong to the architecture, not the framework. Whatever framework lands, these patterns survive.
 
 ---
 
 ## 1.2 Database
 
-**Confirmed:** PostgreSQL.
-**Open (D1):** Query / migration layer — propose **Drizzle ORM** with **`drizzle-kit`** for migrations.
+### Required
 
-### Why Postgres
+- **Relational database with ACID transactions.** The transactional outbox ([§5.2 of handoff](../handoff/05-cross-cutting.md)), inbox dedup ([§5.3.6](../handoff/05-cross-cutting.md)), and idempotency-key records ([§5.4.4](../handoff/05-cross-cutting.md)) all write a record **in the same transaction** as the state mutation. Document stores without multi-document transactions don't fit.
+- **Strong typing for monetary values** (`Money` uses integer minor units per [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md)) — the DB must support integer / decimal types that round-trip safely with the application.
+- **JSON / JSONB column type** for `source_envelope` in audit records ([§4.7 of handoff](../handoff/04-bounded-contexts/4.7-audit.md)) and for `LocalizedText` value-object storage ([§5.7 of handoff](../handoff/05-cross-cutting.md)).
+- **Row-level locking with skip semantics** for outbox-dispatcher claim (multiple dispatcher workers reading the same outbox without contention).
+- **Schema migrations** as code-tracked, reviewable artifacts (not ad-hoc SQL).
 
-The architecture **requires** an RDB with strong transactional semantics ([§5.2 outbox](../handoff/05-cross-cutting.md), [§5.3 inbox dedup](../handoff/05-cross-cutting.md), [§5.4 idempotency](../handoff/05-cross-cutting.md)). All three patterns write to a `_records` table **in the same transaction** as the state mutation. Postgres delivers this cheaply; document stores don't.
+### Lean (v1)
 
-Postgres also gives:
-- **`LISTEN`/`NOTIFY`** as a no-extra-infra in-process event dispatcher for v1 monolith (per [§1.6](#16-async-work-and-message-transport)).
-- **`SELECT ... FOR UPDATE SKIP LOCKED`** for outbox-dispatcher claim semantics.
-- **Per-column encryption** (`pgcrypto`) if [§5.6.9](../handoff/05-cross-cutting.md) field-level encryption is needed later.
-- **JSONB** for the audit `source_envelope` ([§4.7 of handoff](../handoff/04-bounded-contexts/4.7-audit.md)).
+- **Engine**: **PostgreSQL**.
+  - *Why a fit*: ACID; `JSONB`; `SELECT ... FOR UPDATE SKIP LOCKED`; `LISTEN`/`NOTIFY` for an in-process dispatcher; `pgcrypto` if field-level encryption is needed later ([§5.6.9 of handoff](../handoff/05-cross-cutting.md)).
+  - This is the natural default. If the monorepo standardizes on a different RDB with the same capabilities (MySQL 8 with skip-locked, etc.), substitute.
+- **Query / migration layer**: **Drizzle ORM** + `drizzle-kit` for migrations — **Open (D1)**.
+  - *Why a fit*: SQL-first, type-safe, schema-as-code; no runtime client generation; transparent SQL output.
 
-### Why Drizzle (proposed — D1)
-
-- **SQL-first, type-safe.** What you write looks like SQL, what TS sees is fully typed. Lower magic budget than Prisma; closer to the actual queries.
-- **Schema lives in code** as TypeScript declarations; migrations are generated from schema diffs.
-- **No generated client / no separate generation step at runtime** — friendlier in monorepos and CI.
-- **First-class support for transactions, JSONB, custom column types** (needed for `Money`, `LocalizedText`, enums).
-
-### Alternatives considered (D1)
+### Open (D1) — Query / migration layer
 
 | Option | Pros | Cons |
 |---|---|---|
-| **Prisma** | Largest community, great DX, clear docs | Magic generated client; weaker for complex queries; runtime overhead per migration |
+| **Drizzle** (lean) | SQL-first; type-safe; schema-as-code; no codegen step at runtime | Younger ecosystem |
+| **Prisma** | Largest community; great DX | Generated client; weaker for complex queries; migration approach is opinionated |
 | **MikroORM** | Unit-of-Work + Identity Map (DDD-friendly) | Heavier mental model; smaller community |
-| **TypeORM** | Default in older NestJS examples | Known issues with active record vs data mapper confusion; slowing maintenance |
-| **Raw SQL + Kysely** | Maximum control | More boilerplate; ORM features re-implemented |
+| **Kysely** | Maximum control; query builder | More boilerplate; thin on migration tooling |
 
-If the team has Prisma muscle memory, switch — Drizzle's edge is transparency, not capability.
+Any of these implements the same handoff-mandated patterns (outbox / inbox / idempotency in the same transaction as state). The lean is about authoring style, not capability.
 
 ---
 
 ## 1.3 Frontend (Admin UI)
 
-**Confirmed:** React + **TanStack Router** + **Vite**.
+### Required
 
-**Recommended pairings:**
-- **Server state:** TanStack Query (natural pair with TanStack Router).
-- **Tables:** TanStack Table.
-- **Forms:** TanStack Form (or React Hook Form — D2a).
-- **Schema validation:** Zod (shared with backend).
-- **Styling:** Tailwind CSS (lean).
-- **Component primitives:** **Open (D2)** — lean **shadcn/ui** (Radix-backed; you own the source).
+- **SPA suitable for an authenticated-only product.** No SEO; no public buyer-facing surface ([ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)). SSR / RSC are not requirements.
+- **Type-safe routing** that can encode the active-Org and active-Store hierarchy from [§5.1.5 of handoff](../handoff/05-cross-cutting.md): `/orgs/<org-slug>/stores/<store-slug>/...`. URL params should be part of the type system.
+- **Form library that integrates with the same validation schemas used by the backend** — single source of truth for shapes like `CreateProduct`, `UpdateStore`, etc.
+- **Server-state management** distinct from form-state (cache, refetch, invalidation).
+- **Component primitives** that don't impose a visual identity that conflicts with the monorepo's design system (if one exists).
 
-### Why this stack
+### Lean (v1)
 
-- **Type-safe routing** end-to-end. TanStack Router infers route params, search params, and loaders into types — the URL contract becomes part of the type system. Especially valuable for the URL-encoded active-Org / active-Store hierarchy from [§5.1.5 of handoff](../handoff/05-cross-cutting.md): `/orgs/<org-slug>/stores/<store-slug>/...`.
-- **No Next.js / SSR overhead.** The Admin UI is authenticated-only and doesn't need SEO or RSC; Vite SPA is simpler to develop and deploy ([ADR-0021](../decisions/0021-pure-bpp-no-storefront.md) makes this an authenticated-only product anyway).
-- **TanStack family is internally consistent** — Router, Query, Table, Form all share the same authoring style and TS philosophy.
-- **Zod schemas shared with backend** validate form input on the client and request bodies on the server — one source of truth.
+- **Library**: **React**.
+- **Routing**: **TanStack Router** (type-safe params and loaders).
+- **Build**: **Vite**.
+- **Server state**: **TanStack Query**.
+- **Tables**: **TanStack Table**.
+- **Forms**: **TanStack Form** — **Open (D2a)**.
+- **Schema validation**: **Zod** (shared with backend in a contracts package).
+- **Styling**: **Tailwind CSS**.
+- **Component primitives**: **shadcn/ui** — **Open (D2)**.
+
+The TanStack family is internally consistent (Router / Query / Table / Form share authoring style and TS philosophy). If the monorepo already standardizes on a different routing + data-fetching pair (e.g., Next.js + RSC, Remix, or React Router + custom data layer), substitute — the architectural requirements above don't change.
 
 ### Open (D2) — Component library
 
@@ -148,9 +150,15 @@ If the team has Prisma muscle memory, switch — Drizzle's edge is transparency,
 
 ## 1.4 Identity provider (IdP)
 
-**Confirmed:** OIDC integration ([ADR-0009](../decisions/0009-identity-and-external-idp.md)) — provider is configurable.
+### Required
 
-**Open (D3):** Concrete provider for v1.
+- **OIDC integration** ([ADR-0009](../decisions/0009-identity-and-external-idp.md)). The platform delegates authentication entirely; no password storage in BPP.
+- **Provider-agnostic adapter** so the concrete IdP can be swapped without touching the domain.
+- **OIDC claims consumed**: `sub`, `email`, `email_verified`, `name`, optional `picture`, optional `locale`. The User entity maps these per [§4.1 of handoff](../handoff/04-bounded-contexts/4.1-identity.md).
+
+### Lean (v1) — **Open (D3)**
+
+Concrete provider for v1:
 
 ### Provider recommendation matrix
 
@@ -166,46 +174,54 @@ If the team has Prisma muscle memory, switch — Drizzle's edge is transparency,
 
 ### Implementation notes (regardless of provider)
 
-- Use `openid-client` (the de-facto OIDC library for Node).
-- Map IdP claims to the User entity per [§4.1 of handoff](../handoff/04-bounded-contexts/4.1-identity.md):
+- Use a standard OIDC client library (in Node: `openid-client` is the de-facto choice).
+- Claim → User mapping per [§4.1 of handoff](../handoff/04-bounded-contexts/4.1-identity.md):
   - `sub` → `external_subject_id`
   - `email`, `email_verified` → `email`, `email_verified_at`
   - `name` → `display_name`
   - `picture` → `avatar_url` (initial value only; mutable thereafter)
   - `locale` → `preferred_locale` (initial value only; mutable thereafter)
-- Session is **our own opaque token** independent of IdP tokens ([§4.1](../handoff/04-bounded-contexts/4.1-identity.md)). Session storage: a `sessions` table in Postgres + signed cookie carrying the opaque session ID.
+- Session is **the platform's own opaque token** independent of IdP tokens ([§4.1](../handoff/04-bounded-contexts/4.1-identity.md)). Storage: a `sessions` table in the RDB + signed cookie carrying the opaque session ID.
 
 ---
 
 ## 1.5 Object storage (media)
 
-**Open (D4):** S3-compatible object store.
+### Required
 
-| Option | Lean? | Why |
-|---|---|---|
-| **Cloudflare R2** | Lean | Cheap; zero egress fees; S3-compatible API; good for catalog images (high read, predictable load) |
-| **AWS S3** | If hosting on AWS | Battle-tested; high egress cost |
-| **Backblaze B2** | Budget alternative | Cheap; S3-compatible; smaller ecosystem |
-| **Supabase Storage** | Lean if D6 = Supabase | Tightly coupled to Supabase; simple |
+- **Object storage for catalog media** ([§4.3 of handoff](../handoff/04-bounded-contexts/4.3-catalog.md)). The domain holds only references; storage is Infrastructure.
+- **Direct-upload flow** with signed URLs — the BPP doesn't proxy bytes through the application layer.
+- **Indonesia-acceptable data residency** ([§5.6.10 of handoff](../handoff/05-cross-cutting.md)).
 
-### Implementation notes
+### Lean (v1) — **Open (D4)**
 
-- Domain knows only **references** ([§4.3 of handoff](../handoff/04-bounded-contexts/4.3-catalog.md)). Object storage is purely Infrastructure.
-- Upload flow: admin UI requests a signed URL from backend; uploads directly to storage; backend records the reference.
-- Image processing (resize, format conversion) is operational: either on-the-fly via Cloudflare Images (if R2) or via a worker.
+| Option | Notes |
+|---|---|
+| **Cloudflare R2** (lean) | Cheap; zero egress fees; S3-compatible API; image-processing companion (Cloudflare Images) available |
+| **AWS S3** | If hosting on AWS; battle-tested; egress cost considerations |
+| **Backblaze B2** | Budget S3-compatible alternative |
+| **Supabase Storage** | If D3 = Supabase Auth and/or D7 = Supabase Postgres |
+| **Whatever the monorepo standardizes on** | Most monorepos already have an object-store adapter — reuse it |
 
 ---
 
 ## 1.6 Async work and message transport
 
-### v1 — Postgres-only (Confirmed)
+### Required
 
-Per [§5.2 of handoff](../handoff/05-cross-cutting.md) the substrate is the **transactional outbox + dispatcher** pattern. For v1 in a modular monolith ([§6.3 of handoff](../handoff/06-operational.md)) this is **entirely Postgres-resident**:
+- **Transactional outbox + asynchronous dispatcher** ([§5.2 of handoff](../handoff/05-cross-cutting.md)). Events written to a local outbox table in the same transaction as the state mutation; a dispatcher delivers them to subscribers.
+- **Inbox dedup per subscription** ([§5.3.6](../handoff/05-cross-cutting.md)). Subscribers maintain a `processed_events` table keyed by `(subscription_name, event_id)`.
+- **At-least-once delivery semantics**. Subscribers must dedup; producers must commit atomically.
+- **Scheduled work** for operational jobs: outbox pruning, inbox pruning, idempotency-record TTL cleanup, audit retention sweep, session expiry, stuck-events sweep.
+
+### Lean (v1) — RDB-resident
+
+For v1 in a modular monolith ([§6.3 of handoff](../handoff/06-operational.md)), the entire substrate is RDB-resident:
 
 - **Outbox table** per emitting context.
 - **Inbox / `processed_events` table** per subscribing context.
-- **Dispatcher** runs in-process as a background worker (NestJS scheduled task or a separate process consuming the same DB).
-- **Wake mechanism**: Postgres `LISTEN`/`NOTIFY` from the outbox-write transaction (best-effort signal) + interval polling fallback.
+- **Dispatcher** runs in-process as a background worker (or as a sibling process consuming the same DB).
+- **Wake mechanism**: Postgres `LISTEN`/`NOTIFY` from the outbox-write transaction (best-effort signal) + interval polling fallback. Equivalent mechanism if a different RDB is used.
 - **Claim semantics**: `SELECT ... FOR UPDATE SKIP LOCKED` lets multiple dispatcher instances run safely.
 
 No external bus in v1.
@@ -214,95 +230,109 @@ No external bus in v1.
 
 When a context is extracted to its own service ([§6.3.3 of handoff](../handoff/06-operational.md)) or when scale demands it, introduce an external bus. The outbox + envelope contract stays the same; only the transport changes — that's the topology-neutrality promise of [§5.2.8](../handoff/05-cross-cutting.md).
 
-Lean for when this happens: **Redis Streams** (if Redis is already in the stack for caching/sessions) or **NATS** (if not).
+Candidates when this happens: Redis Streams (if Redis is already in the stack), NATS, or whatever the monorepo standardizes on.
 
 ### Scheduled work (cron-style)
 
-Hono is HTTP-only — scheduled jobs run in a sibling worker process or under a job library.
+Scheduled jobs run in a sibling worker process or under a job library.
 
-| Option | Lean? | Why |
-|---|---|---|
-| **`node-cron`** in a sibling worker process | Lean (v1) | Trivial setup; lives in the same repo; can share DI container with the HTTP app |
-| **BullMQ** (Redis-backed) | If/when D5 adds Redis | Production-grade; retries; observability; needed once jobs get heavier |
-| **Postgres-native (`pg_cron` extension)** | If D7 supports it | Zero new infrastructure; managed Postgres providers usually expose this |
+| Option | Notes |
+|---|---|
+| **`node-cron` in a sibling worker process** (lean) | Trivial setup; lives in the same package; can share DI container with the HTTP app |
+| **BullMQ** (Redis-backed) | Production-grade; retries; observability; needed once jobs get heavier |
+| **Postgres-native (`pg_cron` extension)** | Zero new infrastructure if D7 supports it |
+| **Whatever the monorepo uses** | If the monorepo has a scheduler convention (Temporal, Inngest, etc.), use it |
 
-Operational jobs needing scheduling: outbox pruning, inbox pruning, idempotency-record TTL cleanup, audit retention sweep, session expiry, stuck-events sweep. All small; `node-cron` covers v1.
+All operational jobs are small enough that the lean covers v1.
 
 ---
 
 ## 1.7 Observability
 
-**Confirmed approach:** OpenTelemetry SDK for traces and metrics; structured JSON logs.
+### Required
 
-**Open (D5):** Observability backend.
+- **Three operational planes**: logs, metrics, traces ([§6.2 of handoff](../handoff/06-operational.md)). Audit is a fourth, *business* plane and stays separate from operational telemetry.
+- **Structured logs** (JSON at the wire) with standard fields: `timestamp`, `level`, `service`, `context_name`, `correlation_id`, `causation_id`, `user_id` (where authorized to log), `active_org_id`, `active_store_id`.
+- **PII-aware redacting logger** ([§5.6.6 of handoff](../handoff/05-cross-cutting.md)) — every logger goes through a redaction layer driven by the PII catalog in `design/pii.md`.
+- **`correlation_id` propagation** across the entire request → use case → outbox → subscriber chain.
+- **Tracing instrumentation** at use-case boundaries; standard library autoinstrumentation for HTTP / DB / IdP.
 
-| Option | Lean? | Why |
-|---|---|---|
-| **Grafana Cloud** | Lean | Free tier covers v1; OTel-native; logs (Loki) + metrics (Mimir) + traces (Tempo) in one |
-| **Datadog** | If team has it | Best-in-class; pricey |
-| **Self-hosted (Loki + Tempo + Prometheus + Grafana)** | If team has K8s ops | No vendor; ops burden |
-| **AWS CloudWatch + X-Ray** | If hosting on AWS | Adequate; AWS-locked |
+### Lean (v1)
 
-### Implementation notes
+- **Telemetry SDK**: **OpenTelemetry** (vendor-neutral; works with most backends).
+- **Logger library**: **pino** (fast, structured, low overhead) — alternatives: bunyan, winston.
+- **Backend** — **Open (D5)**: see below.
+- **`correlation_id` propagation**: set in a per-request DI scope; passed explicitly to outbox writes; included in the event envelope per [§5.2.1](../handoff/05-cross-cutting.md).
 
-- **Redacting logger** ([§5.6.6 of handoff](../handoff/05-cross-cutting.md)) is a wrapper around `pino` (proposed) or `winston` that consumes the PII catalog from `design/pii.md`.
-- **`correlation_id` propagation**: set on the Nest request context; passed to outbox rows; propagates to subscribers via the envelope.
-- **OTel auto-instrumentation** for Postgres, HTTP, and the IdP SDK comes free; manual spans around use-case boundaries.
+### Open (D5) — Observability backend
+
+| Option | Notes |
+|---|---|
+| **Grafana Cloud** (lean) | Free tier covers v1; OTel-native; logs (Loki) + metrics (Mimir) + traces (Tempo) |
+| **Datadog** | Best-in-class; pricey |
+| **Self-hosted (Loki + Tempo + Prometheus + Grafana)** | No vendor; ops burden |
+| **AWS CloudWatch + X-Ray** | If hosting on AWS |
+| **Whatever the monorepo uses** | Defer if the monorepo has a standard |
 
 ---
 
 ## 1.8 CI/CD and hosting
 
-### CI/CD — **Confirmed:** GitHub Actions
+### Required
 
-- Runs typecheck, lint, test (unit + integration via Testcontainers), build.
-- Required checks on PR before merge: typecheck, lint, test, build.
-- Workflows live in `.github/workflows/` of the code repo (separate from this design repo).
+- **CI pipeline** that runs typecheck, lint, test (unit + integration), and build on every PR; merge gated on green.
+- **Per-environment isolation** for dev / staging / prod ([§6.5.3 of handoff](../handoff/06-operational.md)): distinct credentials for IdP, CDS, registry; production never accepts test-issued Beckn signatures.
+- **Indonesia-acceptable data residency** for the DB ([§5.6.10 of handoff](../handoff/05-cross-cutting.md)).
 
-### Hosting — **Open (D6) Backend + (D7) DB + (D8) Frontend**
+### Lean (v1) — **subject to monorepo conventions**
 
-| Layer | Lean | Alternatives |
+| Layer | Lean | Notes |
 |---|---|---|
-| **Backend** (D6) | **Fly.io** | Railway, Render, AWS ECS, GCP Cloud Run, self-managed K8s |
-| **Database** (D7) | **Neon** or **Supabase** | RDS, Cloud SQL, self-managed Postgres |
-| **Frontend** (D8) | **Cloudflare Pages** or **Vercel** | Netlify, Fly.io static, S3+CloudFront |
+| **CI** | GitHub Actions | Standard; defer if the monorepo uses another CI |
+| **Backend hosting (D6)** | **Fly.io** | Simple Docker deploy; Singapore region |
+| **Database hosting (D7)** | **Neon** or **Supabase** | Serverless Postgres; preview-environment branching (Neon) |
+| **Frontend hosting (D8)** | **Cloudflare Pages** or **Vercel** | Static SPA hosting |
 
-### Lean rationale (proposals)
-
-- **Fly.io for backend**: simple Dockerfile-based deploy; good for monolithic Node services; Indonesian (Singapore) region available; cheaper than ECS for v1 traffic.
-- **Neon for DB**: serverless Postgres, generous free tier, branching for preview environments. Supabase if D3 (IdP) is also Supabase.
-- **Cloudflare Pages for frontend**: cheap; integrates with R2 (D4 lean); Workers available for edge logic if needed.
-
-The architecture is hosting-neutral. These leans are about minimizing v1 ops surface, not a permanent commitment.
+Alternatives are abundant: Railway, Render, AWS (ECS, RDS, CloudFront), GCP (Cloud Run, Cloud SQL), self-managed K8s. The architecture is hosting-neutral. **Most monorepos already have a deployment story** — reuse it. The leans above are only relevant for a standalone v1.
 
 ---
 
 ## 1.9 Tooling
 
-| Tool | Choice | Why |
+> **Most of this section defers to monorepo conventions.** Listed leans assume a standalone v1; align with the host monorepo when it lands.
+
+### Required
+
+- **Type checking** in CI (`tsc --noEmit` or equivalent) — authoritative.
+- **Linting with cross-package boundary rules** (`eslint-plugin-boundaries` or `import/no-restricted-paths`) to enforce bounded-context isolation per [§5.3.7 of handoff](../handoff/05-cross-cutting.md).
+- **Unit and integration testing** with real RDB instances (e.g., via Testcontainers) for integration tests.
+- **OpenAPI / schema-based contract** for the BPP's HTTP surface — generated from the same validation schemas used at runtime.
+- **Type-safe API client** for the frontend — either generated from OpenAPI or via the chosen framework's RPC mechanism.
+
+### Lean (v1)
+
+| Tool | Lean | Notes |
 |---|---|---|
-| **Package manager** | **pnpm** | Fast, disk-efficient, monorepo-native via workspaces |
-| **Monorepo** | **pnpm workspaces** + **Turborepo** (Open D9) | Workspaces for resolution; Turbo for build orchestration if needed |
-| **Linting** | **ESLint** + **typescript-eslint** | Standard |
-| **Formatting** | **Prettier** | Standard; defer to ESLint for rules that overlap |
-| **Type checking** | **`tsc` --noEmit** in CI | Authoritative |
-| **Unit tests** | **Vitest** | Fast, ESM-native, Jest-compatible API |
-| **Integration tests** | **Vitest + Testcontainers** | Real Postgres per test suite; clean teardown |
-| **API contract tests** | **Vitest + Supertest** | Standard for HTTP layer |
-| **Pre-commit hooks** | **lint-staged** + **husky** | Format + lint on staged files |
-| **API documentation** | **`@hono/zod-openapi`** | OpenAPI generated from Zod schemas; no separate codegen |
-| **Type-safe RPC client** | **Hono RPC** (`hono/client`) | Frontend imports the backend's app type; full autocomplete; no codegen step |
-| **Build** | **Vite** (frontend) + **`tsup`** or `tsx` (backend) | Fast builds; ESM-first |
+| **Package manager** | pnpm | Fast; workspace-native |
+| **Monorepo orchestration** | Turborepo — **Open (D9)** | Lightweight task caching; defer to monorepo standard |
+| **Linting** | ESLint + typescript-eslint + boundary plugin | Required (boundary plugin specifically) |
+| **Formatting** | Prettier | Standard |
+| **Type checking** | `tsc --noEmit` in CI | Required |
+| **Unit tests** | Vitest | Fast, ESM-native, Jest-compatible |
+| **Integration tests** | Vitest + Testcontainers | Real RDB per suite |
+| **HTTP-layer tests** | Vitest + Supertest (or framework equivalent) | Standard |
+| **Pre-commit hooks** | lint-staged + husky | Format + lint on staged files |
+| **OpenAPI generation** | From the chosen framework's Zod-integration (e.g., `@hono/zod-openapi`) | Avoid hand-written OpenAPI |
+| **Build** | Vite (frontend) + `tsup` or `tsx` (backend) | ESM-first |
 
-### Open (D9) — Turborepo or Nx or neither
+### Open (D9) — Monorepo orchestration
 
-| Option | Why consider |
+| Option | Notes |
 |---|---|
-| **Turborepo** (proposed) | Lightweight; minimal config; good caching |
+| **Turborepo** (lean) | Lightweight; good caching; minimal config |
 | **Nx** | Heavier; better for very large monorepos; generators |
-| **Neither** | pnpm workspaces + npm scripts only; simplest |
-
-For v1 monorepo size (one app + a few shared packages), **Turborepo** is a good middle ground. Skip if the team prefers raw npm scripts.
+| **Neither (raw pnpm workspaces + npm scripts)** | Simplest |
+| **Whatever the host monorepo uses** | Most likely — defer when the merger lands |
 
 ---
 
@@ -337,10 +367,11 @@ Per [§5.7 of handoff](../handoff/05-cross-cutting.md) the platform default loca
 | D8 | Frontend hosting | [1.8](#18-cicd-and-hosting) | Cloudflare Pages (or Vercel) |
 | D9 | Monorepo orchestration | [1.9](#19-tooling) | Turborepo |
 
-When confirmed, each lean becomes the body text; the alternative table becomes "alternatives considered" if useful, or deleted if not.
+All leans are subject to monorepo conventions when the merger lands. The **Required** items in each section don't move regardless.
 
 ---
 
 ## What's next
 
-Once stack decisions land, the next doc to draft is [`02-repo-layout.md`](02-repo-layout.md) — the concrete directory structure and how it enforces the bounded-context boundaries from the handoff. After that, [`05-phases.md`](05-phases.md) for the implementation roadmap.
+- [`02-repo-layout.md`](02-repo-layout.md) — the BPP **package**'s internal structure within the host monorepo, and how it enforces the bounded-context boundaries from the handoff. Layout is largely portable; specific lint-rule paths depend on the monorepo's workspace structure.
+- [`05-phases.md`](05-phases.md) — implementation roadmap (dependency-ordered build plan). Stack-agnostic; can be drafted before remaining Open (Dn) decisions land.
