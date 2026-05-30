@@ -40,22 +40,11 @@ Read the **Required** lines first. The **Lean** lines are proposals you can keep
   - *Why a fit*: same-language fullstack (shared types between Admin UI and BPP); structural type system + ESM modules enforce context boundaries at build time; mature ecosystem for everything above.
 - **HTTP framework**: **Hono** (subject to monorepo convention).
   - *Why a fit*: lightweight; middleware composition for the cross-cutting concerns; `@hono/zod-validator` + `@hono/zod-openapi` integrate Zod schemas as the single source of truth for validation + OpenAPI; type-safe client generation via Hono RPC pairs cleanly with the frontend.
-- **DI container**: **awilix** (proxy injection, no decorators) — **Open (D0)**.
-  - *Why a fit*: explicit registration; per-request scopes (useful for `correlation_id`, active-Org, active-Store); no `reflect-metadata` runtime dependency.
+- **DI container**: **awilix** (proxy injection, no decorators) — **Confirmed (v1)**.
+  - *Why*: per-request scoping is a hard requirement for `correlation_id`, `active_org_id`, `active_store_id`, actor (per [§5.1.5](../handoff/05-cross-cutting.md), [§5.2.1](../handoff/05-cross-cutting.md)); awilix has first-class scoped containers. Explicit registration + no `reflect-metadata` aligns with the project's explicit-over-magic posture.
+  - Alternatives considered: **tsyringe** (decorator-based; familiar to NestJS users), **no container** (constructor wiring grows linearly with context count). The pattern these implement — looking up a port by token, binding it to a concrete adapter at module load, swapping in tests — is the same regardless of library, so D0 is replaceable later if the monorepo dictates otherwise.
 
 Other reasonable framework choices that satisfy the requirements: **Fastify**, **Express + ts-rest**, **NestJS** (heavier but ships DI + modules built in). If the monorepo standardizes on one of these, that supersedes the Hono lean — the architecture and the patterns translate.
-
-### Open (D0) — DI container
-
-Pick once and use consistently across contexts.
-
-| Option | Pros | Cons |
-|---|---|---|
-| **awilix** (lean) | No decorators; proxy injection; per-request scopes; explicit | Less "magic" than tsyringe |
-| **tsyringe** | Decorator-based; familiar to NestJS users | Needs `reflect-metadata`; decorator config |
-| **No container; constructor wiring at app start** | Zero dependencies; fully explicit | Wiring grows linearly with context count; tests need manual stubs |
-
-The pattern these implement — looking up a port by token, binding it to a concrete adapter at module load, swapping in tests — is the same regardless of library.
 
 ### Enforcement of architectural rules (regardless of framework)
 
@@ -89,19 +78,9 @@ These belong to the architecture, not the framework. Whatever framework lands, t
 - **Engine**: **PostgreSQL**.
   - *Why a fit*: ACID; `JSONB`; `SELECT ... FOR UPDATE SKIP LOCKED`; `LISTEN`/`NOTIFY` for an in-process dispatcher; `pgcrypto` if field-level encryption is needed later ([§5.6.9 of handoff](../handoff/05-cross-cutting.md)).
   - This is the natural default. If the monorepo standardizes on a different RDB with the same capabilities (MySQL 8 with skip-locked, etc.), substitute.
-- **Query / migration layer**: **Drizzle ORM** + `drizzle-kit` for migrations — **Open (D1)**.
-  - *Why a fit*: SQL-first, type-safe, schema-as-code; no runtime client generation; transparent SQL output.
-
-### Open (D1) — Query / migration layer
-
-| Option | Pros | Cons |
-|---|---|---|
-| **Drizzle** (lean) | SQL-first; type-safe; schema-as-code; no codegen step at runtime | Younger ecosystem |
-| **Prisma** | Largest community; great DX | Generated client; weaker for complex queries; migration approach is opinionated |
-| **MikroORM** | Unit-of-Work + Identity Map (DDD-friendly) | Heavier mental model; smaller community |
-| **Kysely** | Maximum control; query builder | More boilerplate; thin on migration tooling |
-
-Any of these implements the same handoff-mandated patterns (outbox / inbox / idempotency in the same transaction as state). The lean is about authoring style, not capability.
+- **Query / migration layer**: **Drizzle ORM** + `drizzle-kit` for migrations — **Confirmed (v1)**.
+  - *Why*: SQL-first, type-safe, schema-as-code; no runtime client generation. Repository implementations in `contexts/<X>/infrastructure/repositories/` are written as SQL-shaped queries against typed schema — natural fit for the architecture's Domain ↔ Infrastructure separation. Migrations are plain SQL files generated from schema diffs, reviewable as SQL. Complex reads (Beckn catalog projection, Order Quote construction, Audit cross-context queries) benefit from the ability to write the SQL directly.
+  - Alternatives considered: **Prisma** (largest community; generated client adds a layer that has to be bridged; less natural for complex reads); **Kysely** (purer query builder; thinner migration tooling); **MikroORM** (Unit-of-Work + Identity Map; heavier mental model). Any of these implements the same handoff-mandated patterns (outbox / inbox / idempotency in the same transaction as state) — the choice is about authoring style. If the monorepo standardizes on one of these, defer.
 
 ---
 
@@ -122,29 +101,16 @@ Any of these implements the same handoff-mandated patterns (outbox / inbox / ide
 - **Build**: **Vite**.
 - **Server state**: **TanStack Query**.
 - **Tables**: **TanStack Table**.
-- **Forms**: **TanStack Form** — **Open (D2a)**.
+- **Forms**: **React Hook Form** + `@hookform/resolvers/zod` — **Confirmed (v1)**.
+  - *Why*: pairs out-of-the-box with shadcn/ui (its official `<Form>` examples build on RHF + Zod resolver); largest community; mature; same Zod schemas as the backend validate forms client-side.
+  - Alternatives considered: **TanStack Form** (better typing, TanStack-family consistency — but requires extra wiring against shadcn/ui's defaults); **Conform** (Zod-first design; smaller community).
 - **Schema validation**: **Zod** (shared with backend in a contracts package).
 - **Styling**: **Tailwind CSS**.
-- **Component primitives**: **shadcn/ui** — **Open (D2)**.
+- **Component primitives**: **shadcn/ui** — **Confirmed (v1)**.
+  - *Why*: Tailwind-native (matches confirmed styling); Radix primitives underneath (best-in-class accessibility); you own the source (no version lock; full customization freedom; zero upgrade tax). Strongest fit with the confirmed stack.
+  - Alternatives considered: **Mantine** (batteries-included DataTable / forms; has its own styling system that fights Tailwind); **Ark UI / Chakra v3** (newer headless primitives; Tailwind-friendly but less polished docs); **Custom** (maximum control; large upfront cost).
 
-The TanStack family is internally consistent (Router / Query / Table / Form share authoring style and TS philosophy). If the monorepo already standardizes on a different routing + data-fetching pair (e.g., Next.js + RSC, Remix, or React Router + custom data layer), substitute — the architectural requirements above don't change.
-
-### Open (D2) — Component library
-
-| Option | Why consider |
-|---|---|
-| **shadcn/ui** (proposed) | You own the source. Tailwind-native. Radix primitives underneath. No lock-in. Indonesian / RTL not needed. |
-| **Mantine** | Batteries-included; data-grid; forms. Heavier install. |
-| **Ark UI / Chakra v3** | Newer; Chakra v3 rebuilt on Ark. Tailwind-friendly. |
-| **Custom** | Maximum control; large up-front cost. |
-
-### Open (D2a) — Forms
-
-| Option | Why consider |
-|---|---|
-| **TanStack Form** (proposed) | Aligns with rest of TanStack stack; type-safe; smaller community |
-| **React Hook Form** | Largest community; mature; Zod resolver |
-| **Conform** | Tighter Zod-first integration; smaller community |
+The TanStack family is internally consistent (Router / Query / Table share authoring style and TS philosophy). Forms deviate to RHF because of the shadcn/ui pairing. If the monorepo already standardizes on a different routing + data-fetching pair (e.g., Next.js + RSC, Remix, or React Router + custom data layer), substitute — the architectural requirements above don't change.
 
 ---
 
@@ -156,9 +122,9 @@ The TanStack family is internally consistent (Router / Query / Table / Form shar
 - **Provider-agnostic adapter** so the concrete IdP can be swapped without touching the domain.
 - **OIDC claims consumed**: `sub`, `email`, `email_verified`, `name`, optional `picture`, optional `locale`. The User entity maps these per [§4.1 of handoff](../handoff/04-bounded-contexts/4.1-identity.md).
 
-### Lean (v1) — **Open (D3)**
+### Lean (v1) — **Deferred to monorepo (D3)**
 
-Concrete provider for v1:
+Concrete provider for v1, if standalone:
 
 ### Provider recommendation matrix
 
@@ -193,7 +159,7 @@ Concrete provider for v1:
 - **Direct-upload flow** with signed URLs — the BPP doesn't proxy bytes through the application layer.
 - **Indonesia-acceptable data residency** ([§5.6.10 of handoff](../handoff/05-cross-cutting.md)).
 
-### Lean (v1) — **Open (D4)**
+### Lean (v1) — **Deferred to monorepo (D4)**
 
 | Option | Notes |
 |---|---|
@@ -261,10 +227,10 @@ All operational jobs are small enough that the lean covers v1.
 
 - **Telemetry SDK**: **OpenTelemetry** (vendor-neutral; works with most backends).
 - **Logger library**: **pino** (fast, structured, low overhead) — alternatives: bunyan, winston.
-- **Backend** — **Open (D5)**: see below.
+- **Backend** — **Deferred to monorepo (D5)**: see below.
 - **`correlation_id` propagation**: set in a per-request DI scope; passed explicitly to outbox writes; included in the event envelope per [§5.2.1](../handoff/05-cross-cutting.md).
 
-### Open (D5) — Observability backend
+### Deferred (D5) — Observability backend
 
 | Option | Notes |
 |---|---|
@@ -314,7 +280,7 @@ Alternatives are abundant: Railway, Render, AWS (ECS, RDS, CloudFront), GCP (Clo
 | Tool | Lean | Notes |
 |---|---|---|
 | **Package manager** | pnpm | Fast; workspace-native |
-| **Monorepo orchestration** | Turborepo — **Open (D9)** | Lightweight task caching; defer to monorepo standard |
+| **Monorepo orchestration** | Turborepo — **Deferred to monorepo (D9)** | Lightweight task caching; defer to monorepo standard |
 | **Linting** | ESLint + typescript-eslint + boundary plugin | Required (boundary plugin specifically) |
 | **Formatting** | Prettier | Standard |
 | **Type checking** | `tsc --noEmit` in CI | Required |
@@ -325,7 +291,7 @@ Alternatives are abundant: Railway, Render, AWS (ECS, RDS, CloudFront), GCP (Clo
 | **OpenAPI generation** | From the chosen framework's Zod-integration (e.g., `@hono/zod-openapi`) | Avoid hand-written OpenAPI |
 | **Build** | Vite (frontend) + `tsup` or `tsx` (backend) | ESM-first |
 
-### Open (D9) — Monorepo orchestration
+### Deferred (D9) — Monorepo orchestration
 
 | Option | Notes |
 |---|---|
@@ -351,27 +317,44 @@ Per [§5.7 of handoff](../handoff/05-cross-cutting.md) the platform default loca
 
 ---
 
-## 1.11 Summary of open decisions
+## 1.11 Decision status
 
-| D# | Topic | Section | Lean |
+### Confirmed for v1
+
+Choices locked for the v1 build. Still subject to monorepo conventions when the merger lands.
+
+| D# | Topic | Section | Choice |
 |---|---|---|---|
-| D0 | DI container | [1.1](#11-backend-language-and-framework) | awilix |
-| D1 | Query / migration layer | [1.2](#12-database) | Drizzle ORM + `drizzle-kit` |
-| D2 | Component library | [1.3](#13-frontend-admin-ui) | shadcn/ui |
-| D2a | Form library | [1.3](#13-frontend-admin-ui) | TanStack Form |
-| D3 | IdP provider | [1.4](#14-identity-provider-idp) | Supabase Auth (if DB is Supabase) or Clerk |
+| D0 | DI container | [1.1](#11-backend-language-and-framework) | **awilix** |
+| D1 | Query / migration layer | [1.2](#12-database) | **Drizzle ORM** + `drizzle-kit` |
+| D2 | Component library | [1.3](#13-frontend-admin-ui) | **shadcn/ui** |
+| D2a | Form library | [1.3](#13-frontend-admin-ui) | **React Hook Form** + Zod resolver |
+
+### Deferred to monorepo
+
+Operational or ecosystem choices the host monorepo is likely to own. Leans noted inline are starting points if a standalone v1 ships before the merger; otherwise these resolve when the merger lands.
+
+| D# | Topic | Section | Inline lean (if standalone v1) |
+|---|---|---|---|
+| D3 | IdP provider | [1.4](#14-identity-provider-idp) | Clerk or Supabase Auth |
 | D4 | Object storage | [1.5](#15-object-storage-media) | Cloudflare R2 |
 | D5 | Observability backend | [1.7](#17-observability) | Grafana Cloud |
 | D6 | Backend hosting | [1.8](#18-cicd-and-hosting) | Fly.io |
-| D7 | Database hosting | [1.8](#18-cicd-and-hosting) | Neon (or Supabase if D3 = Supabase Auth) |
-| D8 | Frontend hosting | [1.8](#18-cicd-and-hosting) | Cloudflare Pages (or Vercel) |
+| D7 | Database hosting | [1.8](#18-cicd-and-hosting) | Neon |
+| D8 | Frontend hosting | [1.8](#18-cicd-and-hosting) | Cloudflare Pages or Vercel |
 | D9 | Monorepo orchestration | [1.9](#19-tooling) | Turborepo |
 
-All leans are subject to monorepo conventions when the merger lands. The **Required** items in each section don't move regardless.
+### Still open
+
+None — all per-decision picks for v1 are either Confirmed or Deferred to monorepo.
+
+---
+
+The **Required** items in each section don't move regardless of which leans land or which choices the monorepo imposes.
 
 ---
 
 ## What's next
 
 - [`02-repo-layout.md`](02-repo-layout.md) — the BPP **package**'s internal structure within the host monorepo, and how it enforces the bounded-context boundaries from the handoff. Layout is largely portable; specific lint-rule paths depend on the monorepo's workspace structure.
-- [`05-phases.md`](05-phases.md) — implementation roadmap (dependency-ordered build plan). Stack-agnostic; can be drafted before remaining Open (Dn) decisions land.
+- [`05-phases.md`](05-phases.md) — implementation roadmap (dependency-ordered build plan). Stack-agnostic.
