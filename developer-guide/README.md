@@ -49,7 +49,7 @@ This guide quotes / references the handoff and ADRs; it doesn't restate the arch
 | 04-conventions.md | Drafted |
 | 05-phases.md | Drafted |
 | 06-context-playbooks/ | Pending |
-| 07-testing.md | Pending |
+| 07-testing.md | Drafted |
 | 08-deployment.md | Pending |
 | 09-runbooks.md | Pending |
 
