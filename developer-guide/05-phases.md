@@ -336,7 +336,7 @@ These two contexts are independent siblings — both depend on Catalog (Phase 3)
 - **Wire-state mapping**: `Active` → `Catalog.isActive: true`; `Paused` / `Suspended` → `Catalog.isActive: false`; `Draft` → not published.
 - **Multi-catalog projection** — each Catalog (Default + additional) projects as a distinguishable grouping under the Provider.
 - **Beckn-level idempotency** — protocol-level duplicate inbound messages detected by `(transaction_id, message_id)` and short-circuited before reaching the Application Layer.
-- **Locale handling** — per [§3.4.6 of handoff](../handoff/03-beckn-integration.md), request locale resolved through `LocalizedText.get`; no automatic translation.
+- **Locale handling** — per [§5.7.6 of handoff](../handoff/05-cross-cutting.md), request locale resolved through `LocalizedText.get`; no automatic translation.
 - **Error mapping** — domain errors → Beckn error codes via the mapping registry. Unmappable domain errors fall through to a generic protocol error AND log the mismatch.
 
 ### Definition of done

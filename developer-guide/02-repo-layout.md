@@ -117,7 +117,7 @@ Notes:
 - `shared/` is for code that's genuinely **cross-context kernel** — not a junk drawer. New entries here require justification.
 - `platform-infra/` holds **third-party adapters** (DB pool, IdP client, OTel SDK). These are stateless / global and are wired into the DI container at app startup. Each context's own adapters live in its own `infrastructure/` folder (see §2.4).
 - `bridge/` is a sibling of `contexts/`. It calls **Application-Layer use cases** from any context but never imports their internal types.
-- `admin-api/` is the first-party HTTP surface — also calls Application-Layer use cases. **It cannot import from `bridge/`** and vice versa ([§2.4.4 of handoff](../handoff/02-principles.md)).
+- `admin-api/` is the first-party HTTP surface — also calls Application-Layer use cases. **It cannot import from `bridge/`** and vice versa ([§2.2.4 of handoff](../handoff/02-principles.md)).
 
 ### 2.3.2 Frontend package — `apps/bpp-admin/`
 
