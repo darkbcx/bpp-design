@@ -169,14 +169,21 @@ Store lifecycle ([ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.
 - `tenancy.store_created`
 - `tenancy.store_submitted_for_activation` ([ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md))
 - `tenancy.store_status_changed` — payload includes `from_state`, `to_state`
-- `tenancy.ownership_transferred` (CLAUDE.md §6.6)
 
-Memberships:
-- `tenancy.membership_created`
-- `tenancy.membership_role_changed`
-- `tenancy.membership_removed`
+Organizations ([ADR-0018](../decisions/0018-organization-tenancy.md)):
+- `tenancy.organization_created`
+- `tenancy.organization_updated`
+- `tenancy.organization_suspended`
+- `tenancy.organization_reactivated`
+- `tenancy.organization_member_added` — emitted on Org creation (for the Owner) and on Invitation acceptance (for Members)
+- `tenancy.organization_member_removed`
+- `tenancy.organization_ownership_transfer_initiated`
+- `tenancy.organization_ownership_transferred` — emitted on acceptance of the transfer
+- `tenancy.organization_ownership_transfer_revoked`
+- `tenancy.store_admin_assigned`
+- `tenancy.store_admin_unassigned`
 
-Invitations ([ADR-0010](../decisions/0010-invitation-account-reconciliation.md)):
+Invitations ([ADR-0010](../decisions/0010-invitation-account-reconciliation.md), now Org-level per [ADR-0018](../decisions/0018-organization-tenancy.md)):
 - `tenancy.invitation_created`
 - `tenancy.invitation_accepted`
 - `tenancy.invitation_declined`

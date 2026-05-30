@@ -109,7 +109,7 @@ Layers are *horizontal* (technical concerns). Bounded contexts are *vertical* (b
 The initial contexts:
 
 * **Identity & Access** — User identity (mirrored from an external IdP), sessions, active-store binding, profile state. Authentication mechanics live entirely at the IdP. See §5.15.
-* **Tenancy** — stores, ownership, memberships, roles, invitations. Owner of the multi-tenancy model.
+* **Tenancy** — Organizations, stores, memberships, roles, invitations, ownership. Owner of the multi-tenancy model. See §5.3 and `design/tenancy.md`.
 * **Catalog** — products, variants, attributes, media, taxonomies, pricing.
 * **Inventory** — stock and availability for catalog items. See §5.11.
 * **Promotion** — vouchers and voucher usage; store-scoped. See §5.13.
@@ -306,7 +306,7 @@ Mappings are documented as a **mapping registry** — a first-class artifact in 
 
 ### 5.1 Tenancy Model
 
-A **Store** is the unit of tenancy. Every business object that belongs to a store (products, inventory, orders, members) is scoped to exactly one store. There is no cross-store data sharing by default.
+An **Organization** is the top-level unit of tenancy ([ADR-0018](decisions/0018-organization-tenancy.md)). Each Organization contains one or more **Stores**. Every business object that belongs to a store (products, inventory, orders, members) is scoped to exactly one store. There is no cross-store data sharing by default — even between stores within the same Organization. Organizations are platform-internal; Beckn is unaware of them.
 
 ### 5.2 Isolation Principles
 
@@ -317,45 +317,56 @@ A **Store** is the unit of tenancy. Every business object that belongs to a stor
 
 ### 5.3 Ownership and Access Model (Conceptual)
 
-* A Store has exactly **one Owner** at any given time. Ownership is transferable but never plural.
-* A Store has zero or more **Admins**. Admins are Users granted administrative access via a **Membership**.
-* A **Membership** is a first-class concept: it represents a User's relationship to a Store, with a role, a status, and a history.
-* A User's identity is global; their *capabilities* are scoped. A User may hold zero or more store Memberships and may additionally hold a platform-scoped role. The full tier model is in §5.4.
-* **Authorization questions are always of the form** *"Does this actor have this capability in this scope?"* — never simply *"Is this actor an admin?"*. The "scope" is the active store for store-scoped users, the platform for platform-scoped users, or system-wide for System Admins.
+Tenancy is hierarchical ([ADR-0018](decisions/0018-organization-tenancy.md)):
+
+* An **Organization** has exactly **one Org Owner** at any given time. Ownership is transferable but never plural.
+* An Organization has zero or more **Org Members**, joined via Org-level invitation (§6).
+* An Organization contains one or more **Stores**. Stores are bound to one Organization for life.
+* Within an Organization, the Org Owner may assign Org Members as **Store Admins** of specific stores — by direct assignment, not invitation.
+* The Org Owner has implicit Store Admin authority over every store in their Organization.
+* Stores no longer carry a per-store Owner — Store-level ownership has been replaced by Org-level ownership.
+* A User's identity is global; capabilities are scoped. A User may belong to **multiple Organizations** independently (multi-Org membership is supported).
+* **Authorization questions are always of the form** *"Does this actor have this capability in this scope?"* — where "scope" is the active store for tenant-scoped users (within the active Org), the platform for platform-scoped users, or system-wide for System Admins.
 
 ### 5.4 Authorization Tiers
 
-The system has three authorization tiers, in decreasing privilege ([ADR-0002](decisions/0002-authorization-tiers-and-matrix.md)):
+The system has three authorization tiers, in decreasing privilege ([ADR-0002](decisions/0002-authorization-tiers-and-matrix.md), [ADR-0018](decisions/0018-organization-tenancy.md)):
 
 * **System Admin** — meta-administrators. Manage the role → capability matrix; configure platform-level settings. Seeded via deploy configuration only. No in-band creation, demotion, or recovery — lifecycle is entirely operational.
-* **Platform-scoped** — platform operators (support, compliance, network operations). May act across tenants according to assigned capabilities. Not Members of stores by virtue of platform role.
-* **Store-scoped** — Members of one or more stores. May act only on their currently active store; no cross-tenant action is reachable from a store-scoped role.
+* **Platform-scoped** — platform operators (support, compliance, network operations). May act across tenants according to assigned capabilities. Not Members of any Organization by virtue of platform role.
+* **Tenant-scoped** — Members of one or more Organizations. Two sub-roles within Tenant-scope:
+  - **Org Owner** — full authority over the Organization and all its stores. Holds all `org.*` capabilities and implicitly all `store.*`-level capabilities for every store in the Org.
+  - **Store Admin** — administrative access to specific stores within the Active Org (per `StoreAdminAssignment`). Holds `store.*`-level capabilities for assigned stores only.
+  - Baseline **Org Member** (no Store assignments): holds only `org.view`.
 
 The **role catalog** is system-defined. Adding a new role is a feature change, not a runtime configuration. Roles within tiers are fixed at design time.
 
-A single User may simultaneously hold a platform-scoped role and Memberships in one or more stores. The two scopes never compose into a single ambient capability set; the user's effective scope at any moment is determined by their **active store** (§5.6).
+A single User may simultaneously hold a platform-scoped role and Memberships in one or more Organizations. The scopes never compose into a single ambient capability set; the user's effective scope at any moment is determined by their **active Org** and (optionally) **active Store** (§5.6).
 
 ### 5.5 Capabilities and the Permission Matrix
 
 * The **capability catalog** is system-defined. Capabilities follow the **action-level naming** convention `<resource>.<verb>` — e.g., `product.publish`, `voucher.disable`, `store.activate`, `user.scrub` ([ADR-0016](decisions/0016-authorization-details.md)). New capabilities are added when the features they gate are added.
 * The **role → capability matrix** is configured at runtime, exclusively by System Admins. No other tier can edit it. Per-store customization of the matrix is not supported. The Tenancy context owns the matrix.
 * **Capability identifiers are single.** A capability has one canonical name; whether it applies cross-tenant or only to the active store is determined by the holder's tier, not by the capability name.
-* For store-scoped roles, every authorization decision applies an **active-store filter** in addition to the capability check: the target object must belong to the user's currently active store.
-* Capabilities exposed via store-scoped roles are a **subset** of those exposed via platform-scoped roles.
+* For **tenant-scoped roles**, every authorization decision applies an **active-org filter**: the target object must belong to the user's currently active Organization. For **store-specific capabilities**, an additional **active-store filter** applies: the target store must belong to the active Org.
+* **Org Owner role** holds all `org.*` capabilities for the Active Org plus implicit `store.*` capabilities for every store in the Org.
+* **Store Admin role** holds `store.*` capabilities for assigned stores within the Active Org only.
+* Capabilities exposed via tenant-scoped roles are a **subset** of those exposed via platform-scoped roles.
 * **The matrix is grants-only.** Absence of a `(role, capability)` entry means denied. No explicit deny entries, no precedence rules. Special cases like "admins can do everything except X" are modeled as the explicit absence of X in that role's grants.
 * **Decision exposure.** Every Application-Layer use case begins with one or more `AuthorizationPort.requireCapability(name, scope)` calls before any state mutation. The port is owned by the Tenancy context and consumed by every other context via the cross-context port pattern (§5.17). The call raises `AuthorizationDenied` on failure; the use case never proceeds. A non-throwing `hasCapability(...)` is also exposed for conditional UI.
 * **Denial auditing is two-tier.** Authenticated denials emit `identity.authorization_denied` (carrying actor, capability name, scope, typed reason); Audit ingests as a standard record. Anonymous denials (no valid session) are infrastructure-level access logs only — they don't reach the event stream.
 
-### 5.6 Active Store
+### 5.6 Active Org and Active Store
 
-* "Active store" is a **session-level attribute** identifying which store-scoped Membership is currently in effect.
-* When a user holds more than one Membership, the active store is chosen by explicit UI action: set in session, then immediately redirected to a URL-scoped path (`/stores/<slug>/...`). The URL slug must match the session value on every request; mismatch is an authorization failure.
-* `active store = none` is a valid state available only to System Admins and platform-scoped users. It is the mode in which they exercise platform-scope authority. Pure store-scoped users never see this state.
-* The session storage mechanism itself is deferred to Gap 01 (Identity & Access scope); authorization treats the active store as a logical attribute.
+* **"Active Org"** is a session-level attribute identifying which Organization the user is currently operating within. Required for any tenant-scoped action.
+* **"Active Store"** is an optional session attribute identifying a specific store within the Active Org. Required for store-specific operations; absent for Org-level operations.
+* When a user belongs to multiple Organizations, the Active Org is chosen by explicit UI action — set in session, then immediately redirected to a URL-scoped path (`/orgs/<org-slug>/...`). When a store is selected within the Active Org, the path extends to `/orgs/<org-slug>/stores/<store-slug>/...`. The URL slugs must match the session values on every request; mismatch is an authorization failure.
+* `active_org = none` (and consequently `active_store = none`) is a valid state available only to System Admins and platform-scoped users. It is the mode in which they exercise platform-scope authority. Pure tenant-scoped users never see this state.
+* The session storage mechanism is owned by Identity & Access (§5.15); authorization treats the active Org and active Store as logical session attributes.
 
 ### 5.7 Impersonation
 
-* Impersonation is supported **strictly downward** along the tier hierarchy: System Admin → (Platform | Store); Platform → Store. Same-tier and upward impersonation are forbidden.
+* Impersonation is supported **strictly downward** along the tier hierarchy: System Admin → (Platform-scoped | Tenant-scoped); Platform-scoped → Tenant-scoped. Same-tier and upward impersonation are forbidden.
 * During impersonation, the impersonator's effective capabilities become exactly those of the impersonated user — no more, no less. Destructive actions are allowed.
 * Impersonation is initiated by an explicit UI action and is time-limited (timeout is operational configuration). An "End impersonation" control is always visible during an impersonating session.
 * **Audit attribution**: every action during impersonation records *both* the real actor and the impersonated user, with the real actor as the responsible party. No action ever appears in audit attributed to the impersonated user alone when impersonation was active.
@@ -636,15 +647,19 @@ State transitions are one-way (no resurrecting an expired invitation; a new one 
 
 ### 6.3 Invitation Targeting
 
-An Invitation targets a recipient **by email** ([ADR-0010](decisions/0010-invitation-account-reconciliation.md)). The Invitation is not bound to a `User.id` at creation; whether the recipient already has a platform User account is a runtime check at acceptance time. With IdP-mediated identity (§5.15), "recipient has an account" and "recipient is creating an account" unify — in both cases, the User is the one whose IdP-verified email matches the invitation's email.
+An Invitation targets a recipient **by email** ([ADR-0010](decisions/0010-invitation-account-reconciliation.md)). Per [ADR-0018](decisions/0018-organization-tenancy.md), invitations now operate at the **Organization level** only.
 
-The Invitation carries the intended role, the target store, the issuer, the validity window, and a single-use acceptance token. The token is opaque, non-guessable, and verifiable without exposing the underlying identifier.
+The Invitation is not bound to a `User.id` at creation; whether the recipient already has a platform User account is a runtime check at acceptance time. With IdP-mediated identity (§5.15), "recipient has an account" and "recipient is creating an account" unify — in both cases, the User is the one whose IdP-verified email matches the invitation's email.
 
-Invitations create **Admin Memberships only**. Owner is set at store creation; ownership transfer uses §6.6, not the invitation flow.
+The Invitation carries the target Organization, the issuer, the validity window, and a single-use acceptance token. The token is opaque, non-guessable, and verifiable without exposing the underlying identifier.
+
+Acceptance creates an **Org Member** (role: `Member`). Org Owner is set at Organization creation; ownership transfer uses §6.6, not the invitation flow.
+
+**Store Admin status is not an invitation.** Once a user is an Active Org Member, the Org Owner can directly assign them as Store Admin of specific stores via `Org.AssignStoreAdmin(...)` — no acceptance round is needed (the user is already verified via Org membership).
 
 ### 6.4 Acceptance Semantics
 
-Acceptance is the atomic transition from `Invitation(Pending)` to `Membership(Active)` ([ADR-0010](decisions/0010-invitation-account-reconciliation.md)). It is a domain operation, not a UI flow.
+Acceptance is the atomic transition from `Invitation(Pending)` to `OrganizationMember(Active)` ([ADR-0010](decisions/0010-invitation-account-reconciliation.md), [ADR-0018](decisions/0018-organization-tenancy.md)). It is a domain operation, not a UI flow.
 
 **Reconciliation rule.** An Invitation can be Accepted by a User iff all of the following hold:
 
@@ -659,22 +674,24 @@ If any condition fails, `AcceptInvitation` returns a typed error and changes no 
 
 **Email mismatch** is a typed error — there is no manual claim with an alternate email. The issuer must Revoke and re-issue with the correct address.
 
-**Already a Member.** Idempotent: acceptance marks the Invitation `Accepted` and returns the existing Membership; no duplicate is created.
+**Already a Member.** Idempotent: acceptance marks the Invitation `Accepted` and returns the existing `OrganizationMember`; no duplicate is created.
 
-**Repeated Accept attempts** on a `Pending` Invitation produce exactly one Membership; subsequent calls find the Invitation already `Accepted` and return the same Membership.
+**Repeated Accept attempts** on a `Pending` Invitation produce exactly one `OrganizationMember`; subsequent calls find the Invitation already `Accepted` and return the same Member.
 
-**Multiple pending Invitations** for the same email are independent — each Accepted, Declined, or Revoked separately.
+**Multiple pending Invitations** for the same email are independent — each Accepted, Declined, or Revoked separately (typically across different Organizations).
 
 ### 6.5 Role Assignment Strategy
 
-* Roles are assigned at the **Membership** level, not at the User level.
-* The initial role set is small and intentional (Owner, Admin). Adding roles later is a deliberate design action — a new role must be justified by a distinct set of capabilities, not by a vague "we might need it."
-* Capabilities map to roles via a documented matrix. The matrix is owned by the Tenancy context, not scattered across feature code.
-* Role changes are auditable events — who changed what, when, on whose authority.
+* Roles within an Organization are: **Org Owner** (one per Org) and **Org Member**. Plus per-store **StoreAdminAssignment** (granting Store Admin capabilities for specific stores).
+* The role catalog is small and intentional. Adding roles later is a deliberate design action — a new role must be justified by a distinct set of capabilities, not by a vague "we might need it."
+* Capabilities map to roles via the matrix in §5.5. The matrix is owned by the Tenancy context, not scattered across feature code.
+* Role changes and StoreAdminAssignment changes are auditable events — who changed what, when, on whose authority.
 
 ### 6.6 Ownership Transitions
 
-Ownership transfer is a distinct, deliberate operation — *not* a role change. It requires explicit confirmation from both parties (current owner relinquishes; new owner accepts) and is logged as a first-class event. Ownership is never "promoted into" through normal admin actions.
+**Org ownership transfer** is a distinct, deliberate operation — *not* a role change. It requires explicit confirmation from both parties (current Org Owner initiates; new Org Owner accepts) and is logged as a first-class event. Ownership is never "promoted into" through normal admin actions.
+
+Stores no longer have a per-store Owner (per [ADR-0018](decisions/0018-organization-tenancy.md)); store-ownership concerns now operate at the Org level.
 
 ---
 
