@@ -70,7 +70,7 @@ This package is authored section-by-section. Not all sections may exist yet.
 | §2 Architectural principles | Drafted |
 | §3 Beckn integration | Drafted |
 | §4 Bounded contexts | Drafted (README + 4.1–4.7) |
-| §5 Cross-cutting concerns | Pending |
+| §5 Cross-cutting concerns | Drafted |
 | §6 Operational stance | Pending |
 | §7 Open issues | Pending |
 | §8 References | Pending |
