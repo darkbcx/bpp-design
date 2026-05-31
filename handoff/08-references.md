@@ -23,7 +23,7 @@ When the handoff and an ADR seem to disagree: the **ADR wins on decision content
 
 | # | Title | Topic in handoff |
 |---|---|---|
-| [ADR-0001](../decisions/0001-bpp-network-identity.md) | BPP network identity | Platform is one BPP; stores project as `Provider` nodes ([§3](03-beckn-integration.md)) |
+| [ADR-0001](../decisions/0001-bpp-network-identity.md) | BPP network identity | Platform is one BPP; stores project as `Provider` nodes ([§3](03-beckn-integration.md)) — signing / registry / callback parts superseded by ADR-0022 |
 | [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md) | Authorization tiers and matrix | Three tiers, capability matrix, active store ([§5.1](05-cross-cutting.md)) |
 | [ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md) | Store lifecycle and state machine | Draft / Active / Suspended / Paused ([§4.2](04-bounded-contexts/4.2-tenancy.md)) |
 | [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) | Store publication and multi-catalog projection | Multi-catalog on Beckn ([§3.4.1](03-beckn-integration.md), [§4.3](04-bounded-contexts/4.3-catalog.md)) |
@@ -39,11 +39,12 @@ When the handoff and an ADR seem to disagree: the **ADR wins on decision content
 | [ADR-0014](../decisions/0014-soft-delete-and-audit.md) | Soft-delete pattern and the Audit context | Business vs. operational entities; Audit context ([§4.7](04-bounded-contexts/4.7-audit.md), [§5.5](05-cross-cutting.md)) |
 | [ADR-0015](../decisions/0015-pii-and-right-to-erasure.md) | PII handling and right-to-erasure | Scrub in place; PII catalog ([§5.6](05-cross-cutting.md)) |
 | [ADR-0016](../decisions/0016-authorization-details.md) | Authorization details | Action-level naming; requireCapability pattern ([§5.1](05-cross-cutting.md)) |
-| [ADR-0017](../decisions/0017-order-and-fulfillment.md) | Order and Fulfillment | Order state machine, CDS publish, Beckn v2 transactional flow ([§4.6](04-bounded-contexts/4.6-order.md)) |
+| [ADR-0017](../decisions/0017-order-and-fulfillment.md) | Order and Fulfillment | Order state machine, CDS publish, Beckn v2 transactional flow ([§4.6](04-bounded-contexts/4.6-order.md)) — Buyer / Order.Place parts superseded by ADR-0021; direct-CDS-publish parts superseded by ADR-0022 |
 | [ADR-0018](../decisions/0018-organization-tenancy.md) | Organization tenancy | Org as top-level tenant grouping stores ([§4.2](04-bounded-contexts/4.2-tenancy.md)) |
 | [ADR-0019](../decisions/0019-manual-catalog-republication.md) | Manual catalog republication | `Store.RequestRepublish` + `Org.RequestRepublishAll` ([§4.2](04-bounded-contexts/4.2-tenancy.md)) |
 | [ADR-0020](../decisions/0020-default-catalog-mandatory.md) | Default Catalog mandatory membership | Every Product is in Default; hide via Product status ([§4.3](04-bounded-contexts/4.3-catalog.md)) — supersedes parts of ADR-0004 |
 | [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md) | Pure BPP, no first-party storefront | User scope is tenant/platform only; Order.buyer is Beckn-typed ([§1](01-overview.md), [§4.1](04-bounded-contexts/4.1-identity.md), [§4.6](04-bounded-contexts/4.6-order.md)) — supersedes parts of ADR-0009 and ADR-0017 |
+| [ADR-0022](../decisions/0022-onix-protocol-gateway.md) | ONIX as Beckn protocol gateway | ONIX (vendor binary, per-BPP) handles signing / schema validation / registry / CDS publish. BPP keeps domain ↔ wire mapping, inbound re-verification, ION-XXXX error mapping, Ack/Nack with CounterSignature ([§3](03-beckn-integration.md)) — supersedes parts of ADR-0001 and ADR-0017 |
 
 ### How ADRs supersede each other
 
@@ -52,6 +53,8 @@ When the handoff and an ADR seem to disagree: the **ADR wins on decision content
 | ADR-0004 §"Default Catalog opt-out" | ADR-0020 (mandatory membership) |
 | ADR-0009 §"User as buyer-or-tenant" | ADR-0021 (User is tenant/platform only) |
 | ADR-0017 §"polymorphic Buyer" + §"first-party Order entry" | ADR-0021 (Beckn-typed Buyer; no first-party entry) |
+| ADR-0001 §"signing key custody" + §"registry interactions" + §"Beckn callback endpoint exposure" | ADR-0022 (ONIX as protocol gateway) |
+| ADR-0017 §"direct CDS publishing from the Bridge" | ADR-0022 (BPP publishes to ONIX; ONIX forwards to CDS) |
 
 Superseded ADRs remain in the repository for historical traceability. Their `Status:` field is updated to point at the superseding ADR.
 

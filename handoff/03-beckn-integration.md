@@ -2,17 +2,19 @@
 
 This section describes how the platform connects to the Beckn network. The integration is the responsibility of a single component — the **Beckn Bridge** — and is governed by strict isolation rules so the domain stays Beckn-naive (per [§2.6](02-principles.md)).
 
-> Source: [`/CLAUDE.md`](../CLAUDE.md) §4. Decisions: [ADR-0001](../decisions/0001-bpp-network-identity.md) (network identity), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) (catalog publishing), [ADR-0017](../decisions/0017-order-and-fulfillment.md) (transactional flow + wire vocabulary).
+> Source: [`/CLAUDE.md`](../CLAUDE.md) §4. Decisions: [ADR-0001](../decisions/0001-bpp-network-identity.md) (network identity — *signing / registry parts superseded by ADR-0022*), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) (catalog publishing), [ADR-0017](../decisions/0017-order-and-fulfillment.md) (transactional flow + wire vocabulary — *direct-CDS-publish parts superseded by ADR-0022*), **[ADR-0022](../decisions/0022-onix-protocol-gateway.md) (ONIX protocol gateway — current architecture)**.
 
 ## 3.1 What the Bridge is (and isn't)
 
 The Bridge is a **specialized adapter in the Interface Layer** (per [§2.2](02-principles.md)). It is **not** a bounded context — it has no domain. It is **not** a layer of its own — it sits alongside the Admin UI as another adapter (the platform is a pure BPP per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md); the Bridge is the sole buyer-facing surface).
 
+Per [ADR-0022](../decisions/0022-onix-protocol-gateway.md), the network is intermediated by **ONIX** — a vendor-provided Beckn Protocol Server deployed per-BPP. ONIX handles cryptographic signing, network-side schema validation, Beckn registry interactions, and CDS publishing. The Bridge keeps everything else: domain ↔ wire mapping, inbound signature re-verification (for CounterSignature attestation), ION-XXXX error mapping, Ack / AckNoCallback / Nack construction, correlation, and protocol-boundary idempotency.
+
 | Role | What it does |
 |---|---|
 | Bridge **is** an adapter | Translates between the Beckn wire format and Application-Layer calls in both directions |
 | Bridge **calls** Application use cases | Never substitutes for them, bypasses them, or duplicates their work |
-| Bridge **is the sole protocol-aware zone** | The only place Beckn schema, vocabulary, signing, registry lookups, callback URLs, and message envelopes live |
+| Bridge **is the sole Beckn-vocabulary zone in the BPP** | The only place Beckn schema, vocabulary, mapping, correlation, and Ack/Nack construction live within the BPP. Cryptographic signing + registry / CDS / BAP-callback network HTTP move to ONIX. |
 | Bridge **is event-driven** | Subscribes to domain events (per [§5.2](05-cross-cutting.md), forthcoming) and re-projects on relevant state changes |
 
 **Things the Bridge does not do** (these are defects if found):
@@ -25,24 +27,26 @@ The Bridge is a **specialized adapter in the Interface Layer** (per [§2.2](02-p
 
 No other adapter imports anything from the Bridge. The Application Layer is **unaware** that the Bridge exists — it treats Bridge-originated calls identically to first-party-originated calls.
 
-## 3.2 Network identity — the platform as one BPP
+## 3.2 Network identity — the platform as one BPP (via ONIX)
 
-The platform appears on the Beckn network as **one BPP**, identified by a single `bpp-id` and `bpp-uri` ([ADR-0001](../decisions/0001-bpp-network-identity.md)). Stores project onto the network as Beckn `provider` nodes inside that BPP's responses.
+The platform appears on the Beckn network as **one BPP**, identified by a single `bpp-id` and `bpp-uri` ([ADR-0001](../decisions/0001-bpp-network-identity.md), [ADR-0022](../decisions/0022-onix-protocol-gateway.md)). Stores project onto the network as Beckn `provider` nodes inside that BPP's responses. **ONIX is the network-visible BPP**: signed messages on the wire come from ONIX; the registry knows ONIX; `bpp-uri` resolves to the ONIX endpoint.
 
 | Concern | Resolution |
 |---|---|
 | BPP cardinality | One BPP for the whole platform (not one BPP per store) |
-| Provider ID derivation | Deterministic from the internal store ID; immutable for the store's lifetime |
-| Signing key | One platform-level key for all outbound messages |
-| Callback endpoint | One platform-wide endpoint; the Bridge routes inbound messages to the originating store using protocol-level identifiers (transaction_id, message_id, provider reference) — never by URL shape |
+| Provider ID derivation | Deterministic from the internal store ID; immutable for the store's lifetime — **set by the BPP** (ONIX is transparent on `context` contents) |
+| Signing key | One platform-level key. **Held by ONIX.** The BPP does not hold the signing key. |
+| `bpp-id` / `bpp-uri` | **`bpp-id` set by the BPP** in outbound `context.bpp_id`. **`bpp-uri` = the ONIX network-facing URL**, set by the BPP in outbound `context.bpp_uri`. |
+| Callback endpoint | The ONIX network-facing endpoint is one platform-wide endpoint. ONIX forwards inbound messages to the BPP; the BPP routes them to the originating store using protocol-level identifiers (transaction_id, message_id, provider reference) — never by URL shape |
 | Reputation | Platform-owned. Per-store reputation visibility is deferred |
-| Registry registration | Operational input. `bpp-id`, `bpp-uri`, signing key material, registry credentials are supplied as configuration. The Bridge does not own the registry lifecycle |
+| Registry registration | Operational input. `bpp-id`, `bpp-uri`, signing key material, registry credentials are supplied as **ONIX configuration**, not BPP configuration. The BPP does not own registry lifecycle. |
+| BPP ↔ ONIX wire | Full Beckn JSON envelope, plain HTTPS POST, no auth between BPP and ONIX. Network-level isolation is the security model — the BPP-facing endpoint of ONIX is private. |
 
 **Consequence**: a store's Beckn identity is bound to its store identity for life. "Resetting" Beckn presence requires creating a new store. Quality control at store onboarding is a platform responsibility because all stores share the BPP's reputation.
 
-## 3.3 Three-actor architecture — CDS-mediated discovery
+## 3.3 Four-actor architecture — ONIX-mediated network access
 
-Beckn v2 separates discovery from transaction. Three actors interact:
+Beckn v2 separates discovery from transaction. After [ADR-0022](../decisions/0022-onix-protocol-gateway.md), four actors interact, with ONIX as the BPP's protocol gateway:
 
 ```
                      ┌──────────────────────┐
@@ -50,24 +54,44 @@ Beckn v2 separates discovery from transaction. Three actors interact:
                      │   Service (CDS)      │
                      └─┬──────────────┬─────┘
                        │              ▲
-        /on_discover ──┤              ├── /catalog/publish
+        /on_discover ──┤              │
                        ▼              │
-                ┌───────────┐    ┌─────────────┐
-                │    BAP    │    │   BPP (us)  │
-                │  (buyer-  │───►│             │
-                │   side)   │    │             │
-                └───────────┘    └─────────────┘
-                           /select  /init  /confirm
-                           /status  /cancel
+                ┌───────────┐         │
+                │    BAP    │         │
+                │  (buyer-  │         │
+                │   side)   │         │
+                └───────┬───┘         │
+                        │             │
+                        │ Beckn v2    │ /catalog/publish
+                        │ signed      │ (forwarded)
+                        ▼             │
+                  ┌──────────────────────┐
+                  │       ONIX           │
+                  │  (Beckn Protocol     │
+                  │   Server — vendor    │
+                  │   binary, per-BPP)   │
+                  └──────────┬───────────┘
+                             │
+                             │ full Beckn JSON
+                             │ plain HTTPS POST
+                             │ no auth
+                             ▼
+                       ┌─────────────┐
+                       │   BPP (us)  │
+                       │             │
+                       └─────────────┘
+              /select  /init  /confirm  /status  /cancel
+              all flow BAP → ONIX → BPP and back
 ```
 
-- **BAP** (Buyer App): the buyer-side participant. External to us.
-- **CDS** (Catalog Discovery Service): the network's catalog index. External to us.
-- **BPP** (us): publishes catalogs to CDS; handles the transactional flow directly with BAP.
+- **BAP** (Buyer App): the buyer-side participant. External to us. Never talks to the BPP directly — only to ONIX.
+- **ONIX** (Beckn Protocol Server): vendor-provided binary deployed per-BPP. Network-visible endpoint. Handles signing, schema validation, registry, CDS publish. Transparent on `context` fields; never modifies `transaction_id` / `message_id`.
+- **CDS** (Catalog Discovery Service): the network's catalog index. External to us. Reachable only through ONIX from the BPP's side.
+- **BPP** (us): publishes catalogs through ONIX (which forwards to CDS); handles the transactional flow via ONIX (which forwards from / to BAP).
 
-**Critically: the BPP does not field `/discover`.** Discovery is the CDS's responsibility. The BPP's job is to **publish** its stores' catalogs to the CDS (via `/catalog/publish`), and the CDS handles BAP discover queries.
+**Critically: the BPP does not field `/discover`.** Discovery is the CDS's responsibility. The BPP's job is to **publish** its stores' catalogs through ONIX (`POST <onix-url>/catalog/publish`), and the CDS handles BAP discover queries.
 
-The transactional flow (`/select`, `/init`, `/confirm`, etc.) is between BAP and BPP directly.
+The transactional flow (`/select`, `/init`, `/confirm`, etc.) flows **BAP → ONIX → BPP** inbound and **BPP → ONIX → BAP** outbound. ONIX is in the path on both legs but is transparent on protocol-level identifiers — `transaction_id` and `message_id` are preserved end-to-end.
 
 ## 3.4 Wire vocabulary (Beckn v2)
 
@@ -104,18 +128,18 @@ The domain (the Catalog context) owns the structure: which catalogs exist, which
 
 ## 3.5 Handler set in v1
 
-What the BPP exposes and consumes in v1:
+What the BPP exposes and consumes in v1. All handlers pass through ONIX (per [§3.3](#33-four-actor-architecture--onix-mediated-network-access)); the table shows logical direction.
 
-| Direction | Handler | Purpose |
-|---|---|---|
-| BPP → CDS | `POST /catalog/publish` | Publish or republish a store's catalogs |
-| CDS → BPP | `POST /catalog/on_publish` | Async per-catalog processing result |
-| BAP → BPP | `POST /select` | BAP indicates items; BPP returns a quoted `Contract` |
-| BAP → BPP | `POST /init` | BAP provides buyer details; BPP reserves inventory |
-| BAP → BPP | `POST /confirm` | BAP commits; BPP converts reservation, records voucher use |
-| BAP → BPP | `POST /status` | BAP queries order status |
-| BAP → BPP | `POST /cancel` | BAP requests cancellation (pre-fulfillment) |
-| BPP → BAP | `POST /on_select`, `/on_init`, `/on_confirm`, `/on_status`, `/on_cancel` | Async callbacks projecting the Contract back to the BAP |
+| Logical direction | Handler | Wire path | Purpose |
+|---|---|---|---|
+| BPP → CDS | `POST /catalog/publish` | BPP → ONIX → CDS | Publish or republish a store's catalogs |
+| CDS → BPP | `POST /catalog/on_publish` | CDS → ONIX → BPP | Async per-catalog processing result |
+| BAP → BPP | `POST /select` | BAP → ONIX → BPP | BAP indicates items; BPP returns a quoted `Contract` |
+| BAP → BPP | `POST /init` | BAP → ONIX → BPP | BAP provides buyer details; BPP reserves inventory |
+| BAP → BPP | `POST /confirm` | BAP → ONIX → BPP | BAP commits; BPP converts reservation, records voucher use |
+| BAP → BPP | `POST /status` | BAP → ONIX → BPP | BAP queries order status |
+| BAP → BPP | `POST /cancel` | BAP → ONIX → BPP | BAP requests cancellation (pre-fulfillment) |
+| BPP → BAP | `POST /on_select`, `/on_init`, `/on_confirm`, `/on_status`, `/on_cancel` | BPP → ONIX → BAP | Async callbacks projecting the Contract back to the BAP |
 
 **Deferred for v1**:
 
@@ -167,9 +191,9 @@ The Bridge maintains a **mapping registry** — a first-class artifact, not tran
 | Order payment_status | `Settlement[]` |
 | Buyer contact snapshot (Beckn) | `Participant` (buyer) |
 
-## 3.8 Catalog publishing (BPP → CDS)
+## 3.8 Catalog publishing (BPP → ONIX → CDS)
 
-The Bridge publishes catalog state to the CDS via `/catalog/publish` on every domain event that changes what should appear on the network:
+The Bridge publishes catalog state via `POST <onix-url>/catalog/publish`; **ONIX signs and forwards to CDS** (per [ADR-0022](../decisions/0022-onix-protocol-gateway.md)). From the Bridge's perspective this is a single HTTP POST with a full Beckn JSON envelope; ONIX handles the network-side delivery. The Bridge publishes on every domain event that changes what should appear on the network:
 
 | Triggering domain event | Bridge action |
 |---|---|
@@ -184,7 +208,7 @@ The Bridge publishes catalog state to the CDS via `/catalog/publish` on every do
 
 Re-projection is **idempotent**: re-publishing the same state is harmless. This is essential because the event delivery layer (per ADR-0011) is at-least-once.
 
-The CDS responds asynchronously with `/catalog/on_publish` containing per-catalog processing results. The Bridge handles this callback — recording acknowledgements and surfacing publish failures for ops review (consistent with the failure-handling rule from [§2.5](02-principles.md)).
+The CDS responds asynchronously with `/catalog/on_publish` (also routed through ONIX) containing per-catalog processing results. The Bridge handles this callback — recording acknowledgements and surfacing publish failures for ops review (consistent with the failure-handling rule from [§2.5](02-principles.md)).
 
 **Why push, not pull?** ADR-0001 + ADR-0004 + ADR-0017 settled on push-publish to CDS as the v2 mechanism. The BPP does not field `/discover` directly; that's the CDS's role. Pull mode (`/catalog/pull`) and subscription mode are CDS-territory APIs out of v1 scope for the BPP.
 
@@ -204,33 +228,77 @@ BAP                            BPP
  │──── 200 ACK ────────────────►│
 ```
 
-The Bridge owns the asynchronous concerns:
+The Bridge owns the asynchronous concerns. ONIX is **transparent on protocol identifiers**: `transaction_id` and `message_id` flow through end-to-end (BAP ↔ ONIX ↔ BPP), so correlation logic is unchanged from the original design.
 
 - **Correlation**: mapping inbound responses back to the original `transaction_id` and `message_id`.
-- **Protocol-level idempotency**: recognizing duplicate inbound messages by their protocol identifiers and short-circuiting before they reach the Application Layer.
+- **Protocol-level idempotency**: recognizing duplicate inbound messages by their protocol identifiers and short-circuiting before they reach the Application Layer. ONIX also dedups at the network door (ION-1004 within a 30-minute window), but the BPP keeps its own `bridge_inbox` dedup as defense in depth.
 - **Transactional context**: tracking what state a multi-step Beckn flow is in (search → select → init → confirm) from the protocol's perspective.
+- **Outbox retry to ONIX**: outbound POSTs use `bridge_outbox` with exponential backoff. 5xx from ONIX (transient — including ION-9001) → retry. 4xx (structural / policy / signing-side) → mark `dead`, emit event for ops review.
 
 The Application Layer is unaware of message IDs, transaction IDs, callback URLs, or acknowledgement semantics. From its perspective, every interaction is a discrete use-case invocation that returns a domain result. The Bridge translates that synchronous-looking call into the asynchronous protocol dance.
 
 ## 3.10 Versioning strategy
 
-The Beckn protocol evolves. Multiple versions may be in flight on the network simultaneously; not all participants upgrade in lockstep. The Bridge handles versioning:
+The Beckn protocol evolves. Multiple versions may be in flight on the network simultaneously; not all participants upgrade in lockstep. The Bridge handles versioning. ONIX is **transparent on protocol version** — it does not version-translate. The BPP targets Beckn v2.0.0 directly in outbound messages; ONIX just signs and routes.
 
 - Each supported protocol version has its **own translation set** within the Bridge. Versions coexist; they don't replace each other silently.
 - The protocol version is **negotiated per inbound message** via the `context` block.
 - A **protocol upgrade is a Bridge-only change**. If a Beckn version bump forces a domain change, that's evidence of leakage — investigate before accepting.
 - Deprecating a protocol version is **explicit and announced**, not an accident of refactoring.
+- Structural / version-mismatch inbound is rejected by ONIX at the network door (ION-8xxx schema / ION-1005 invalid domain). State-dependent rejections happen at the BPP via Nack.
 
 ## 3.11 Error handling across the boundary
 
-Errors cross the Bridge in both directions, and in both directions they are **translated**, not forwarded.
+Errors cross the Bridge in both directions, and in both directions they are **translated**, not forwarded. Per [ADR-0022](../decisions/0022-onix-protocol-gateway.md), the Beckn network uses the **ION-XXXX error code registry** (from `ion-specs/errors/`), which the Bridge consumes in both directions.
+
+### Direction summary
 
 | Direction | Translation |
 |---|---|
-| Domain → Beckn | Domain errors (e.g., "store not found", "product unavailable", "voucher expired") are mapped to appropriate Beckn error codes and shapes. The Application Layer never emits a Beckn error code. |
-| Beckn → Domain | Protocol-level errors (schema invalid, signature failed, unknown action, malformed envelope) are handled **inside the Bridge** and never surfaced to the Application Layer as domain errors. Only validated, well-formed, business-meaningful requests reach the Application. |
+| Domain → ION-XXXX | Domain errors (e.g., "store not found", "product unavailable", "voucher expired") map to ION-XXXX codes for Nack responses or for failure shape on outbound. The Application Layer never emits a Beckn / ION error code. |
+| ONIX → Domain | ONIX failures arrive as `{ errorCode: "ION-XXXX", errorMessage }` with HTTP status per the registry's `http_status` field. 5xx (e.g., ION-9001) → retry from `bridge_outbox`. 4xx (e.g., ION-1001 signature, ION-1002 not registered, ION-1003 TTL, ION-1004 duplicate, ION-7xxx policy) → fatal; mark `dead`, emit event for ops review. |
+| ONIX-rejected inbound | Structural / protocol failures (ION-1xxx, ION-8xxx) never reach the BPP — ONIX rejects them at the network door. |
+| BPP-rejected inbound (state-dependent) | State that ONIX can't see (catalog availability, contract state, etc.) is rejected at the Bridge with a typed Nack carrying an ION-XXXX code (typically ION-3xxx transactional or ION-7xxx policy the BPP catches). |
 
-**Unmappable cases are explicit**: if a domain error has no clean Beckn equivalent, the Bridge maps it to a generic protocol error *and* logs the mismatch. Silent information loss is forbidden.
+**Unmappable cases are explicit**: if a domain error has no clean ION-XXXX equivalent, the Bridge maps it to a generic protocol error *and* logs the mismatch. Silent information loss is forbidden.
+
+### ION-XXXX registry consumption
+
+The Bridge loads `ion-specs/errors/registry.json` at startup. Each registry entry pins `http_status`, `title`, `description`, `affected_field`, `affected_apis`, and `resolution`. The Bridge's `mapping-registry/errors.ts` (see [§3.7](#37-mapping-discipline--the-mapping-registry)) is the domain-error → ION-XXXX projection; reverse mapping (ION-XXXX → domain action) is also registry-backed.
+
+ION code ranges:
+
+| Range | Category |
+|---|---|
+| ION-1xxx | Transport (signing, identity, TTL, duplicate `messageId`, domain code) |
+| ION-2xxx | Catalog |
+| ION-3xxx | Transaction |
+| ION-4xxx | Fulfillment |
+| ION-5xxx | Post-order |
+| ION-6xxx | Settlement |
+| ION-7xxx | Network policy |
+| ION-8xxx | Schema |
+| ION-9xxx | System (ION infrastructure; ION-9001 is retryable) |
+
+## 3.11a Inbound signature re-verification
+
+Even though ONIX verifies BAP signatures at the network door (rejecting ION-1001 / ION-1002 failures before forwarding to the BPP), **the BPP must re-verify** inbound signatures. Reason: the BPP's `Ack` / `AckNoCallback` / `Nack` response carries a **CounterSignature** attesting that *the BPP itself* authenticated the inbound. Without a BPP-side re-verification step, the CounterSignature would be an implicit assertion ("ONIX told us this is OK") rather than an explicit BPP attestation.
+
+The Bridge keeps a slim verification module (`bridge/protocol/verification.ts`) that re-verifies the BAP's `Authorization` header on every inbound. ONIX forwards the original envelope including the BAP's `Authorization`, so the data is available.
+
+Two operational follow-ups deferred to Phase 6 (per ADR-0022 open follow-ups):
+- **N1 — CounterSignature signing locus**: whether the BPP holds a narrow signing key for CounterSignatures only, or whether ONIX adds the CounterSignature on the synchronous response path (BPP has no key). Default working assumption: ONIX adds it.
+- **N2 — BAP public key for re-verification**: whether the BPP runs its own registry client or ONIX includes the BAP's key as forwarded metadata. Default working assumption: ONIX forwards it.
+
+## 3.11b Ack / AckNoCallback / Nack
+
+Every inbound message receives a synchronous typed response with a CounterSignature. Silent drop is forbidden by the protocol.
+
+| Response | When |
+|---|---|
+| `Ack` | The request is accepted; an async callback (e.g., `/on_select`) will follow. |
+| `AckNoCallback` | The request is accepted; no callback will follow (e.g., synchronous `/status` queries that complete in the Ack body). |
+| `Nack` | The request is rejected at the BPP level (state-dependent failures ONIX couldn't catch). Carries an ION-XXXX code. |
 
 ## 3.12 Event-driven Bridge behavior summary
 
@@ -246,9 +314,10 @@ To make the Bridge's behavior concrete:
 | What | How |
 |---|---|
 | **Domain and Application Layers** | Tested with **no Beckn fixtures**. If a domain test needs a Beckn payload to make sense, the test is wrong. |
-| **The Bridge** | Tested with **real Beckn v2 payloads** from `ion-specs` examples, verifying both inbound parsing and outbound projection for each supported protocol version. |
-| **End-to-end Beckn flows** | Tested as **integration tests** that exercise the Bridge against a stubbed network counterpart (mock BAP, mock CDS), confirming async correlation, error mapping, and version negotiation. |
+| **The Bridge** | Tested with **real Beckn v2 payloads** from `ion-specs` examples, verifying both inbound parsing and outbound projection for each supported protocol version. ION-XXXX error mapping is registry-driven; tests cover both directions. |
+| **End-to-end Beckn flows** | Tested as **integration tests** that exercise the Bridge against a **stub ONIX** (an in-process HTTP server emulating ONIX's request/response shape) and a stubbed BAP. Confirms async correlation, error mapping, version negotiation, retry on 5xx, and Ack/Nack with CounterSignature. |
 | **Mapping registry** | Each mapping entry is exercisable in isolation with paired sample inputs and expected outputs. |
+| **No real ONIX in tests** | Tests use a stub ONIX with deterministic behavior. The vendor binary is exercised in staging integration, not in CI. |
 
 The presence of Beckn fixtures in any test outside the Bridge's own test suite is a red flag worth investigating.
 
