@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-28
+- **Partially superseded by**: [ADR-0022](0022-onix-protocol-gateway.md) — signing key custody, Beckn registry interactions, and the BPP-side Beckn callback endpoint exposure move to ONIX. Network-identity model + provider-ID derivation rule survive unchanged.
 - **Resolves gap**: [gaps/resolved/05-bpp-network-identity.md](../gaps/resolved/05-bpp-network-identity.md)
 
 ## Context
