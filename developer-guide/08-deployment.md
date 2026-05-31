@@ -129,7 +129,7 @@ Production deploys are **never auto-deployed from main** — always gated on:
 - **Never in env-checked-in files.** `.env.example` only.
 - **Stored in a secrets manager** with per-environment isolation and access audit.
 - **System Admin seed credentials** distributed via secure operational channel — never recoverable in-band.
-- **Beckn signing keys** rotated per policy; old keys destroyed after the rotation window.
+- **Beckn signing keys** are **ONIX's responsibility** post-[ADR-0022](../decisions/0022-onix-protocol-gateway.md); not in BPP secrets. Rotation is a vendor operation (see [§9.5 of `09-runbooks.md`](09-runbooks.md)).
 - **No secret reuse across environments** (a leaked staging secret cannot grant prod access).
 
 ### Lean
@@ -148,8 +148,15 @@ Secrets the BPP needs per environment:
 - IdP: `IDP_CLIENT_SECRET`
 - Object storage: access key / secret key
 - Email: provider API key
-- Beckn: signing private key, registry credentials
 - Observability: OTel exporter credentials
+- **(Optional, depends on ADR-0022 §10 N1 resolution)** BPP CounterSignature signing key — only if N1 = (a) — narrow key for synchronous Ack/Nack responses only. If N1 = (b), the BPP holds no signing keys.
+
+**Beckn signing keys and registry credentials are NOT BPP secrets** post-[ADR-0022](../decisions/0022-onix-protocol-gateway.md). They live in ONIX's vendor-managed secrets layer.
+
+**ONIX-related BPP config** (not secrets — just URLs):
+- `BPP_ID` — set in outbound `context.bpp_id`.
+- `BPP_URI` — set in outbound `context.bpp_uri`; value equals the ONIX network-facing URL.
+- `ONIX_ENDPOINT` — the BPP-facing URL of ONIX (private; reachable only from the BPP).
 
 ### Audit DB role separation in production
 
@@ -169,10 +176,10 @@ Application code receives the correct credential per use case via DI registratio
 ### Required
 
 - **Long-running compute** (not edge / serverless for v1 — the outbox dispatcher needs persistent state).
-- **Outbound network access** to IdP, CDS, registry, object storage, observability, email.
+- **Outbound network access** to IdP, **ONIX** (per [ADR-0022](../decisions/0022-onix-protocol-gateway.md)), object storage, observability, email. No direct connection to Beckn registry or CDS — ONIX handles those.
 - **Process supervision** — auto-restart on crash.
 - **Graceful shutdown** — drain in-flight requests; flush outbox; close DB connections.
-- **Health checks**: `/healthz` (liveness) + `/readyz` (readiness — confirms DB, IdP discovery doc, CDS reachability).
+- **Health checks**: `/healthz` (liveness) + `/readyz` (readiness — confirms DB, IdP discovery doc, **ONIX reachability**).
 - **Forward-only migrations** apply automatically on deploy (or via a manual gate, but never roll back in production).
 
 ### Lean: Fly.io
@@ -497,39 +504,48 @@ When standing up a fresh environment (e.g., new staging from scratch):
 
 ---
 
-## 8.10 Beckn-specific deploy concerns
+## 8.10 Beckn-specific deploy concerns (BPP + ONIX)
+
+Per [ADR-0022](../decisions/0022-onix-protocol-gateway.md), the BPP integrates with the Beckn network through **ONIX** — a vendor-provided binary deployed per-BPP. ONIX holds the signing key, registry credentials, and CDS endpoint config. The BPP holds only `BPP_ID`, `BPP_URI` (= the ONIX network-facing URL), and `ONIX_ENDPOINT` (the BPP-facing URL of ONIX).
 
 ### Required
 
 - **`bpp-id` per environment.** Each environment is a distinct Beckn participant — staging on staging registry, prod on prod registry.
-- **Signing key per environment.** Never share keys across envs.
-- **Registry registration is operational, not in-band.** The BPP consumes registry credentials; it doesn't register / unregister itself.
-- **CDS endpoint per environment.** Per Beckn network — staging CDS vs production CDS.
-- **No staging traffic on production network.** Strictly enforced — staging signatures rejected by production.
+- **One ONIX instance per BPP environment.** Each deployment env has its own ONIX with its own signing key + registry credentials.
+- **`BPP_URI` equals the ONIX network-facing URL.** The network sees ONIX as the BPP endpoint.
+- **`ONIX_ENDPOINT` (BPP-facing) is private.** Network-level isolation is the security model — no auth between BPP and ONIX.
+- **Registry registration is an ONIX vendor operation**, not BPP code. The BPP never holds registry credentials.
+- **No staging traffic on production network.** Strictly enforced — separate ONIX instances per env, signing with separate keys.
 
-### Registration procedure (Phase 6+)
+### Registration procedure (Phase 6+) — ONIX-side
 
 When deploying to a Beckn-connected environment for the first time:
 
-1. Generate signing key pair (per [§9.5 of `09-runbooks.md`](09-runbooks.md) signing-key procedure).
-2. Submit registration to the appropriate Beckn registry per their documented API:
+1. **Provision the ONIX instance** for the environment (vendor procedure).
+2. **Configure ONIX**:
    - `bpp-id`: e.g., `bpp-staging.example.com`
-   - `bpp-uri`: e.g., `https://api.bpp-staging.example.com/beckn`
-   - Public key
+   - `bpp-uri`: e.g., `https://onix-staging.bpp.example.com` (ONIX's network-facing URL)
    - Network domain (e.g., `retail`, `mobility`)
-3. Wait for registry confirmation.
-4. Test inbound + outbound with a stub BAP.
-5. Record registration details (registry ID, key fingerprint) in the operations log.
+   - Signing key material + registry credentials
+   - The BPP-facing endpoint URL (private, reachable only from the BPP)
+3. ONIX submits registration to the appropriate Beckn registry.
+4. **Configure the BPP** to point at ONIX: set `BPP_ID`, `BPP_URI` (= ONIX network-facing URL), `ONIX_ENDPOINT` (= ONIX BPP-facing URL).
+5. Test inbound + outbound with a stub BAP via the ONIX path.
+6. Record registration details in the operations log (vendor-side record).
 
 ### Updating registration
 
-If `bpp-uri` changes (host migration) OR key rotates (per [§9.5](09-runbooks.md)) — submit registration update; old configuration remains valid during the overlap window per network policy.
+If `bpp-uri` changes (ONIX host migration) OR signing key rotates (per [§9.5 of `09-runbooks.md`](09-runbooks.md)) — vendor-side operation against ONIX; the BPP's only update is potentially `BPP_URI` if the ONIX host moves.
 
 ### Phase-aware deploy
 
-In **Phase 1–5** (before Phase 6 Bridge lands), the BPP can deploy to staging / prod without Beckn registration — Beckn-related env vars stay unset. The Bridge code paths short-circuit if `BPP_ID` is empty.
+In **Phase 1–5** (before Phase 6 Bridge lands), the BPP can deploy to staging / prod without ONIX integration — Beckn-related env vars (`BPP_ID`, `BPP_URI`, `ONIX_ENDPOINT`) stay unset. The Bridge code paths short-circuit if these are empty.
 
-When **Phase 6 lands**, do the registration as a coordinated step alongside the deploy of the Bridge code. Don't deploy Bridge code to production without registry registration in place.
+When **Phase 6 lands**, the ONIX instance must be provisioned and registered as a coordinated step alongside the deploy of the Bridge code. Don't deploy Bridge code to production without ONIX in place and registered.
+
+### ONIX zero-downtime restarts
+
+ONIX supports zero-downtime restarts (vendor-provided). During an ONIX restart, BPP outbound POSTs get transient 5xx responses; `bridge_outbox` retries with exponential backoff (matching ION-9001 retry semantics). No special "drain BPP" pattern is needed — inbox absorbs the transient errors.
 
 ---
 
@@ -540,14 +556,15 @@ After every production deploy:
 | Check | What to verify | How |
 |---|---|---|
 | **Health** | App is up | `curl https://api.bpp.example.com/healthz` returns 200 |
-| **Readiness** | DB + IdP reachable | `curl https://api.bpp.example.com/readyz` returns 200 |
+| **Readiness** | DB + IdP + ONIX reachable | `curl https://api.bpp.example.com/readyz` returns 200 |
 | **Frontend** | Static bundle served | Open admin URL in browser; sign-in page renders |
 | **Sign-in flow** | OIDC round-trip works | Sign in as a known test user; cookie set; `/me` returns user |
 | **Migration** | Schema is current | Query `_drizzle_migrations` table (or equivalent); latest migration is the deployed one |
 | **Outbox dispatcher** | Worker process running | Create a test event in non-prod; verify it's dispatched within seconds; in prod, monitor `outbox.dispatcher.lag` |
 | **Audit ingestion** | Audit subscriber active | Verify recent `audit_records` for the deploy's startup events |
-| **Bridge** (Phase 6+) | Signature verification healthy | Send a known-good payload from stub BAP; verify accepted |
-| **CDS publish** (Phase 6+) | Recent publish on a known-Active store | Check `bridge_outbox` for recent `state: 'sent'` rows |
+| **ONIX reachability** (Phase 6+) | BPP can POST to `ONIX_ENDPOINT` | `curl <onix-endpoint>/health` (or vendor-defined) returns 200 |
+| **Bridge inbound** (Phase 6+) | Inbound re-verification healthy | Send a known-good payload via ONIX from stub BAP; verify accepted with Ack + CounterSignature |
+| **CDS publish** (Phase 6+) | Recent publish on a known-Active store reaches ONIX | Check `bridge_outbox` for recent `state: 'sent'` rows |
 | **Page-worthy alerts** | None firing | Check observability dashboard |
 
 If any check fails, **rollback per the runbook** ([§9.10 of `09-runbooks.md`](09-runbooks.md)).

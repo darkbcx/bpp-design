@@ -229,87 +229,138 @@ Use this shape for every runbook. Each entry below in §9.3–§9.11 follows it.
 
 ## 9.5 Beckn Bridge runbooks
 
-### Rotate the platform Beckn signing key
+### Rotate the platform Beckn signing key (ONIX-side)
 
 **When**: scheduled rotation; suspected key compromise.
-**Who**: Platform-scoped (`platform.beckn.signing_key.rotate`).
+**Who**: Platform-scoped, coordinating with ONIX vendor.
 **Severity**: paging if compromise; high otherwise (touches network identity).
 **Estimated duration**: hours (announcement + network propagation)
 
-**Procedure**:
-1. Generate the new key pair following Beckn-prescribed algorithm (per [ADR-0001](../decisions/0001-bpp-network-identity.md)).
-2. Register the new public key with the Beckn registry while the old one remains active.
-3. Wait for registry propagation per network policy (typically minutes to hours).
-4. Deploy backend with the new private key as primary signer; keep verifying inbound with both old + new keys (if supported by registry / verification layer).
-5. After the transition window (announced to network operators), deregister the old public key.
-6. Remove the old private key from the secrets manager.
+**Note**: per [ADR-0022](../decisions/0022-onix-protocol-gateway.md), the signing key lives in **ONIX** (vendor binary). The BPP holds no signing key for outbound. This runbook is now a coordination procedure with the ONIX vendor.
 
-**Verification**: outbound signatures verified by stub BAP using the new public key; no `signature_verification_failed` errors from inbound traffic during the transition.
-**Rollback**: if signing breaks, re-promote the old key from secrets manager (during the overlap window only).
-**Related**: [ADR-0001](../decisions/0001-bpp-network-identity.md), [§4.1 of handoff](../handoff/03-beckn-integration.md), [`06-context-playbooks/6.7-beckn-bridge.md`](06-context-playbooks/6.7-beckn-bridge.md).
+**Procedure**:
+1. Open a vendor support ticket / use the documented vendor channel to request key rotation.
+2. Vendor generates the new key pair per Beckn-prescribed algorithm and registers the new public key with the Beckn registry while the old one remains active.
+3. Wait for registry propagation per network policy (typically minutes to hours).
+4. Vendor cuts ONIX over to the new private key for outbound signing; existing inbound verification continues to work since ONIX may verify against multiple keys during overlap.
+5. After the transition window (announced to network operators), vendor deregisters the old public key.
+6. **BPP-side action**: confirm `bridge_outbox` is delivering successfully against the rotated ONIX (no spike in ION-1001 from BAPs that may have stale keys).
+
+**Verification**: outbound signatures from ONIX verified by stub BAP using the new public key; no spike in inbound ION-1001 failures during the transition.
+**Rollback**: vendor-side rollback to the old key from their secrets manager (during the overlap window only).
+**Related**: [ADR-0022](../decisions/0022-onix-protocol-gateway.md), [§3.2 of handoff](../handoff/03-beckn-integration.md), [`06-context-playbooks/6.7-beckn-bridge.md`](06-context-playbooks/6.7-beckn-bridge.md).
 
 ---
 
-### Re-register with the Beckn registry
+### Re-register with the Beckn registry (ONIX-side)
 
-**When**: registry-side issue invalidated our entry; BPP migrated to a new `bpp-uri`.
-**Who**: Platform-scoped.
+**When**: registry-side issue invalidated our entry; ONIX-network endpoint migrated.
+**Who**: Platform-scoped, coordinating with ONIX vendor.
 **Severity**: paging (BPP off-network if not handled)
 **Estimated duration**: under an hour
 
-**Procedure**:
-1. Confirm current registry state (whether entry exists, whether key is valid).
-2. Submit registration update per Beckn registry's documented API.
-3. Wait for confirmation / propagation.
-4. Verify inbound traffic resumes (or starts).
-5. Verify outbound callbacks are accepted by BAPs.
+**Note**: per [ADR-0022](../decisions/0022-onix-protocol-gateway.md), registry interactions are ONIX's responsibility. The BPP no longer holds registry credentials.
 
-**Verification**: stub BAP can successfully complete a `/select → /on_select` round-trip; production traffic resumes if previously dropped.
-**Rollback**: re-submit with the previous configuration if available.
+**Procedure**:
+1. Open a vendor support ticket / use the documented vendor channel to request re-registration.
+2. Vendor confirms current registry state and submits registration update per the Beckn registry's API.
+3. Vendor confirms registry propagation.
+4. **BPP-side action**: verify inbound traffic resumes (test with stub BAP via ONIX).
+5. Verify outbound callbacks reach BAPs (check `bridge_outbox` `state: sent` rate returns to normal).
+
+**Verification**: stub BAP can complete a `/select → /on_select` round-trip via ONIX; production traffic resumes if previously dropped.
+**Rollback**: vendor re-submits with previous configuration if available.
 
 ---
 
-### Replay catalog publishes after CDS outage
+### Replay catalog publishes after ONIX or CDS outage
 
-**When**: CDS was unreachable for a period; catalogs published during outage are stale at CDS.
+**When**: ONIX or upstream CDS was unreachable for a period; catalogs published during outage are stale.
 **Who**: Platform-scoped (`platform.bridge.replay_catalog`).
 **Severity**: high (BAP discovery affected)
 **Estimated duration**: minutes per store, depends on counts
 
 **Procedure**:
-1. Confirm CDS is reachable again.
-2. Identify affected stores (those with `tenancy.store_status_changed` or `catalog.*` events emitted during the outage window — check the event log).
-3. Trigger republish for each:
+1. Confirm ONIX is reachable from the BPP (`curl <ONIX_ENDPOINT>/health` or vendor-defined).
+2. If the outage was upstream (ONIX → CDS), coordinate with the vendor to confirm CDS connectivity is restored.
+3. Identify affected stores (those with `tenancy.store_status_changed` or `catalog.*` events emitted during the outage window — check the event log).
+4. Trigger republish for each:
    - For an entire Org: `RequestOrgRepublishAll(org_id)`.
    - For a single store: `RequestStoreRepublish(store_id)`.
    - For all platform-wide: run a script that fans out per Active store.
-4. Monitor `bridge_outbox` for `state: sent`.
+5. Monitor `bridge_outbox` for `state: sent`.
 
 **Verification**: `bridge_outbox` shows recent successful publish entries for affected stores; BAP sandbox queries return current content.
 **Rollback**: N/A (republish is idempotent).
-**Related**: [ADR-0019](../decisions/0019-manual-catalog-republication.md).
+**Related**: [ADR-0019](../decisions/0019-manual-catalog-republication.md), [ADR-0022](../decisions/0022-onix-protocol-gateway.md).
 
 ---
 
-### Investigate a signature-failure spike
+### Investigate ONIX unreachable
 
-**When**: `beckn.inbound.signature_failure` alert fires.
+**When**: `bridge.outbox.failure_rate` spike with HTTP errors targeting `ONIX_ENDPOINT`; `/readyz` reports ONIX unreachable.
+**Who**: Platform-scoped on-call.
+**Severity**: paging (BPP off-network)
+**Estimated duration**: minutes to hours depending on root cause
+
+**Procedure**:
+1. Confirm scope: is it a single instance failing or all BPP traffic? Check observability for `bridge.outbox.5xx_count` and `bridge.outbox.4xx_count`.
+2. Try `curl <ONIX_ENDPOINT>/health` (or vendor-defined healthcheck) from a BPP host.
+3. Determine the failure mode:
+   - **ONIX process crashed / restarting** → wait for vendor's auto-restart; outbox retries should resume. If extended, open vendor ticket.
+   - **Network partition** between BPP and ONIX → infrastructure issue; escalate to the network/platform team.
+   - **ONIX configuration drift** (e.g., signing key issue, registry credentials expired) → vendor ticket for ONIX-side investigation.
+   - **`ONIX_ENDPOINT` env misconfigured on the BPP** → check secrets manager / deploy config.
+4. While ONIX is down, BPP traffic accumulates in `bridge_outbox` with `state: pending` (5xx retries). The BPP is "soft offline" but messages aren't lost.
+5. After ONIX recovers, monitor `bridge_outbox` for catch-up.
+
+**Verification**: `bridge.outbox.success_rate` returns to baseline; no `state: pending` rows older than 5 minutes; `/readyz` reports ONIX reachable.
+**Rollback**: N/A (this is failure-mode triage, not a change to roll back).
+**Related**: [ADR-0022](../decisions/0022-onix-protocol-gateway.md), [§9.10 below](#section-deploy-restart) (ONIX restart).
+
+---
+
+### Investigate a signature-failure spike (BPP-side re-verification)
+
+**When**: `bridge.inbound.signature_failure` alert fires (BPP re-verification failures, per ADR-0022 §6).
 **Who**: Platform-scoped on-call.
 **Severity**: paging
 **Estimated duration**: minutes to hours depending on root cause
 
+**Note**: post-[ADR-0022](../decisions/0022-onix-protocol-gateway.md), ONIX already verifies inbound signatures at the network door (returning ION-1001 to BAPs). Failures at the BPP layer mean: ONIX verified but the BPP's re-verification rejected — usually a configuration / key-availability problem at the BPP, not a BAP issue.
+
 **Procedure**:
-1. Check the rate of failures vs. baseline. A handful is noise; a spike is signal.
+1. Check the rate of BPP-side re-verification failures vs. baseline. A handful is noise; a spike is signal.
 2. Identify the source BAP (`context.bap_id` from rejected payloads in logs).
 3. Determine the failure mode:
-   - **Expired BAP key in registry** → wait for BAP to rotate, or contact them.
-   - **Our verification adapter regression** → check recent deploys; consider rollback.
-   - **Network-wide registry issue** → check registry status; coordinate with network operators.
-   - **Malicious actor probing** → escalate per security policy; consider rate limiting.
+   - **BAP key not available to the BPP** (per N2 resolution): if N2=(a), our registry client is failing; if N2=(b), ONIX isn't forwarding the key header. Investigate accordingly.
+   - **Our re-verification adapter regression** → check recent deploys; consider rollback.
+   - **Drift between ONIX-verified state and BPP-verified state** (rare; suggests ONIX bug or key cache staleness) → vendor ticket.
 4. Document the determination in the incident ticket.
 
 **Verification**: failure rate returns to baseline.
 **Rollback**: deploy rollback if our adapter caused the regression.
+
+---
+
+### Update ION error registry from ion-specs
+
+**When**: `ion-specs` publishes new ION-XXXX codes (per `ion-specs/errors/README.md`) or updates existing entries; scheduled periodic sync.
+**Who**: Engineering, with platform sign-off.
+**Severity**: low (planned)
+**Estimated duration**: under an hour
+
+**Procedure**:
+1. Pull the latest `ion-specs/errors/registry.json`.
+2. Run the BPP's mapping-registry test suite against the new registry. Any breaking changes (existing code removed, `http_status` changed for an existing code) will surface as test failures.
+3. Review additions — do any new codes need a domain-side mapping (e.g., new ION-3xxx transactional code that maps to a domain error)?
+4. Update `bridge/mapping-registry/errors.ts` if domain-side mappings need to be added.
+5. Deploy as a standard rollout (not paging).
+6. Verify in production by checking `bridge.outbox.4xx_codes` distribution; new codes appear in the histogram if BAPs encounter the new conditions.
+
+**Verification**: BPP test suite green; production observability shows correct mapping behavior post-deploy.
+**Rollback**: revert to prior `registry.json` snapshot + revert mapping-registry changes; deploy.
+**Related**: [ADR-0022 §10 N3](../decisions/0022-onix-protocol-gateway.md#open-follow-ups) (proposed additions to the upstream registry).
 
 ---
 
