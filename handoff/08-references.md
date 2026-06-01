@@ -27,8 +27,8 @@ When the handoff and an ADR seem to disagree: the **ADR wins on decision content
 | [ADR-0002](../decisions/0002-authorization-tiers-and-matrix.md) | Authorization tiers and matrix | Three tiers, capability matrix, active store ([§5.1](05-cross-cutting.md)) |
 | [ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md) | Store lifecycle and state machine | Draft / Active / Suspended / Paused ([§4.2](04-bounded-contexts/4.2-tenancy.md)) |
 | [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) | Store publication and multi-catalog projection | Multi-catalog on Beckn ([§3.4.1](03-beckn-integration.md), [§4.3](04-bounded-contexts/4.3-catalog.md)) |
-| [ADR-0005](../decisions/0005-catalog-and-product-modeling.md) | Catalog and product modeling | Matrix vs. Flat product modes ([§4.3](04-bounded-contexts/4.3-catalog.md)) |
-| [ADR-0006](../decisions/0006-inventory-model.md) | Inventory model | StockLevel + Reservation + StockMovement ([§4.4](04-bounded-contexts/4.4-inventory.md)) |
+| [ADR-0005](../decisions/0005-catalog-and-product-modeling.md) | Catalog and product modeling | Base Product entity and Matrix/Flat modes ([§4.3](04-bounded-contexts/4.3-catalog.md)) — mode discriminator + "no bundles in v1" deferral superseded by ADR-0023 |
+| [ADR-0006](../decisions/0006-inventory-model.md) | Inventory model | StockLevel + Reservation + StockMovement ([§4.4](04-bounded-contexts/4.4-inventory.md)) — anchor set + reservation conversion extended by ADR-0024 |
 | [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md) | Pricing, tax, and vouchers | Money, base_price + tax_rate, store-scoped vouchers ([§4.3](04-bounded-contexts/4.3-catalog.md), [§4.5](04-bounded-contexts/4.5-promotion.md)) |
 | [ADR-0008](../decisions/0008-localization-and-localizedtext.md) | Localization and LocalizedText | Value object; default locale `id` ([§5.7](05-cross-cutting.md)) |
 | [ADR-0009](../decisions/0009-identity-and-external-idp.md) | Identity and external IdP | OIDC integration, two-tier User profile ([§4.1](04-bounded-contexts/4.1-identity.md)) |
@@ -45,6 +45,8 @@ When the handoff and an ADR seem to disagree: the **ADR wins on decision content
 | [ADR-0020](../decisions/0020-default-catalog-mandatory.md) | Default Catalog mandatory membership | Every Product is in Default; hide via Product status ([§4.3](04-bounded-contexts/4.3-catalog.md)) — supersedes parts of ADR-0004 |
 | [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md) | Pure BPP, no first-party storefront | User scope is tenant/platform only; Order.buyer is Beckn-typed ([§1](01-overview.md), [§4.1](04-bounded-contexts/4.1-identity.md), [§4.6](04-bounded-contexts/4.6-order.md)) — supersedes parts of ADR-0009 and ADR-0017 |
 | [ADR-0022](../decisions/0022-onix-protocol-gateway.md) | ONIX as Beckn protocol gateway | ONIX (vendor binary, per-BPP) handles signing / schema validation / registry / CDS publish. BPP keeps domain ↔ wire mapping, inbound re-verification, ION-XXXX error mapping, Ack/Nack with CounterSignature ([§3](03-beckn-integration.md)) — supersedes parts of ADR-0001 and ADR-0017 |
+| [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md) | Product composition and choice modeling | Four-mode discriminator (Standalone / Variant / Configurable / Composite) replacing Matrix/Flat; new entities `ProductComponent`, `ChoiceGroup`, `Choice`; mutual-exclusion invariant; flat composition depth ([§4.3](04-bounded-contexts/4.3-catalog.md)) — supersedes parts of ADR-0005 |
+| [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md) | Inventory for Composite and Configurable Products | Two anchor types: `StockLevel` (existing) and new `OwnerPurchasability` (purchasable only, no count). Per-mode effective-availability formulas; Reservation fan-out for Composite (per component) and Configurable (per option-anchored Choice); new `OwnerPurchasabilityToggled` event ([§4.4](04-bounded-contexts/4.4-inventory.md)) — supersedes parts of ADR-0006 |
 
 ### How ADRs supersede each other
 
@@ -55,6 +57,8 @@ When the handoff and an ADR seem to disagree: the **ADR wins on decision content
 | ADR-0017 §"polymorphic Buyer" + §"first-party Order entry" | ADR-0021 (Beckn-typed Buyer; no first-party entry) |
 | ADR-0001 §"signing key custody" + §"registry interactions" + §"Beckn callback endpoint exposure" | ADR-0022 (ONIX as protocol gateway) |
 | ADR-0017 §"direct CDS publishing from the Bridge" | ADR-0022 (BPP publishes to ONIX; ONIX forwards to CDS) |
+| ADR-0005 §"Matrix \| Flat mode discriminator" + §"bundles / kits — not in v1" deferral | ADR-0023 (four-mode discriminator; Composite + Configurable Products are first-class) |
+| ADR-0006 §"Inventory anchors" + §"Reservation conversion" | ADR-0024 (anchor set expands via `OwnerPurchasability`; reservation conversion fans out across components and option-anchored choices) |
 
 Superseded ADRs remain in the repository for historical traceability. Their `Status:` field is updated to point at the superseding ADR.
 
@@ -72,9 +76,9 @@ The design docs in [`/design/`](../design/) carry the **full entity models, life
 |---|---|---|
 | [`design/identity.md`](../design/identity.md) | ADR-0009, ADR-0021 | User and Session entities; JIT provisioning; IdP integration boundary |
 | [`design/tenancy.md`](../design/tenancy.md) | ADR-0018, ADR-0003, ADR-0010 | Organization, OrganizationMember, OrganizationInvitation, Store, StoreAdminAssignment; full lifecycle tables |
-| [`design/catalog.md`](../design/catalog.md) | ADR-0005, ADR-0004, ADR-0007, ADR-0008, ADR-0020 | Product, ProductVariant, ProductAttribute, Catalog, CatalogMembership, PlatformCategory, ProductCategoryAssignment, Media; full use-case catalog |
+| [`design/catalog.md`](../design/catalog.md) | ADR-0005, ADR-0004, ADR-0007, ADR-0008, ADR-0020, ADR-0023 | Product (four modes), ProductVariant, ProductAttribute, ProductComponent, ChoiceGroup, Choice, Catalog, CatalogMembership, PlatformCategory, ProductCategoryAssignment, Media; full use-case catalog; per-mode Beckn projection table |
 | [`design/order.md`](../design/order.md) | ADR-0017, ADR-0021 | Order, Quote, LineItem; state machine; orchestration pseudocode; Bridge ↔ Order mapping table; sequence walkthroughs |
-| [`design/events.md`](../design/events.md) | ADR-0011 | Authoritative event registry (~70 declared event types); envelope schema; subscriber registry |
+| [`design/events.md`](../design/events.md) | ADR-0011, ADR-0023, ADR-0024 | Authoritative event registry (~90 declared event types); envelope schema; subscriber registry |
 | [`design/audit.md`](../design/audit.md) | ADR-0014, ADR-0015 | AuditRecord schema; retention table per category; access matrix; DB role separation |
 | [`design/pii.md`](../design/pii.md) | ADR-0015 | PII field catalog (per entity, per event payload); scrub-action types; processor catalog |
 

@@ -22,8 +22,8 @@ What v1 **does**:
 - Multi-tenant aggregator BPP for small retailers in Indonesia (PDP-compliant).
 - Beckn v2 / ION wire vocabulary at the protocol boundary; CDS-mediated discovery.
 - One Organization → many Stores; Stores publish as Beckn `Provider` nodes.
-- Catalog with Matrix / Flat product modes; multi-catalog projection (Default mandatory + additional opt-in).
-- Inventory with single-location stock, reservations, no backorders.
+- Catalog with four product modes — `Standalone`, `Variant`, `Configurable` (modifier + configurator items), `Composite` (bundles); multi-catalog projection (Default mandatory + additional opt-in).
+- Inventory with single-location stock, reservations, no backorders; two anchor types — `StockLevel` for stock-tracked items, `OwnerPurchasability` (purchasable flag only) for Composite + Configurable Products; per-mode effective-availability computation; reservation fan-out for Composite / Configurable confirms.
 - Vouchers — store-scoped, code-based, one per order.
 - Order flow Created → Initiated → Confirmed → Fulfilled, with Cancel and Expire terminals; pre-fulfillment cancel only.
 - Self-fulfillment by stores (no platform logistics).
@@ -60,7 +60,11 @@ What v1 **doesn't** — captured below.
 
 | Deferral | Why deferred | Likely v-when |
 |---|---|---|
-| Bundles / kits / composite products | Requires a Bundle entity composing Products with bundle-specific pricing. | When stores ship multi-item SKUs. |
+| Variant bundles (e.g., Family Combo S/M/L as native siblings of one parent) | Mutual-exclusion rule in v1 (per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)) forbids variant × composite combinations. v1 workaround: three separate Composite Products optionally grouped via an additional Catalog. | When the workaround feels heavy for high-cardinality variant bundles. |
+| Configurable variants (per-size extras menus) | Same mutual-exclusion rule. v1 workaround: one Configurable Product with size and extras as parallel `ChoiceGroup`s. | When the workaround proves UX-awkward at scale. |
+| Nested composites (Composite inside Composite) | v1 mandates depth = 1. Workaround: pre-configure the inner composite as a Standalone Product. | When real-world composition exceeds one level. |
+| `FIXED` choice group semantics (Beckn's spec-grey fourth `selectionType`) | Schema permits it but BAPs render inconsistently. Use `longDesc` for disclosure instead. | If Beckn ratifies semantics. |
+| Daily capacity for Configurable Products ("I can make 30 custom cakes today") | Distinct concept from stock; would be a separate `DailyCapacity` entity. | When stores need service-window capacity controls. |
 | Digital vs. physical product type taxonomy | v1 assumes physical. | When digital goods (downloads, codes) ship. |
 | Full-text / faceted search implementation | Read-side concern; the domain is search-engine-agnostic. | When the platform needs Admin search beyond simple filters. |
 | Media storage & CDN strategy | Domain knows only references; storage is operational. | Pre-launch — needed for actual deployment. |
@@ -217,7 +221,7 @@ These are **not deferred features** — they're **constraints** that v1 lives wi
 ### Catalog
 
 - **Default Catalog membership is mandatory** ([ADR-0020](../decisions/0020-default-catalog-mandatory.md)). To hide a Product from Beckn, set `status = Archived` or `Draft`.
-- **A Product's `mode` (Matrix / Flat) is immutable** after creation.
+- **A Product's `mode` (Standalone / Variant / Configurable / Composite) is immutable** after creation (per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)). Modes are mutually exclusive — no variant bundles, no configurable variants, no nested composites in v1.
 
 ### Audit
 

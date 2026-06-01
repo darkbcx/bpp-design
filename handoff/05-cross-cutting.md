@@ -189,7 +189,7 @@ Audit retention is **independent and longer** — see [§5.5](#55-soft-delete-pa
 |---|---|---|
 | `beckn-bridge` | `tenancy.store_status_changed`, all `catalog.*` mutations, selected `promotion.*` and `tenancy.*_republish_requested` | Re-project resources onto the Beckn network (via CDS publish) |
 | `audit` | Broad — most mutation events | Compliance and history ingestion |
-| `inventory-catalog-subscriber` | `catalog.product_created`, `_variant_added`, `_archived`, `_variant_removed`, `_restored` | Auto-manage `StockLevel` lifecycle |
+| `inventory-catalog-subscriber` | `catalog.product_created`, `_variant_added`, `_archived`, `_variant_removed`, `_restored` | Auto-manage the inventory anchor per Product mode: `StockLevel` for Standalone / Variant, `OwnerPurchasability` for Composite / Configurable (per [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)) |
 
 The Beckn Bridge does NOT emit domain events (it emits Beckn protocol messages, which are not domain events).
 
@@ -359,7 +359,9 @@ End-of-life is a state transition; data is retained indefinitely (subject to PII
 | Store | `Suspended` / `Paused` (always reversible per [ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md)) |
 | Product | `Archived` (per [ADR-0005](../decisions/0005-catalog-and-product-modeling.md)) |
 | ProductVariant | Removed (retained if referenced by orders) |
+| ProductComponent / ChoiceGroup / Choice | Removed (retained if referenced by orders; per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)) |
 | StockLevel | `Inactive` (per [ADR-0006](../decisions/0006-inventory-model.md)) |
+| OwnerPurchasability | `Inactive` (per [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)) |
 | User | `Disabled` (per [ADR-0009](../decisions/0009-identity-and-external-idp.md)) |
 | Voucher | `Disabled`, or derived `Expired` / `Exhausted` (per [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md)) |
 | Invitation | `Accepted` / `Declined` / `Revoked` / `Expired` (per [ADR-0010](../decisions/0010-invitation-account-reconciliation.md)) |
@@ -523,7 +525,9 @@ Subject to `LocalizedText`:
 | Tenancy (Store) | name, description, public contact display |
 | Tenancy (Organization) | name, description |
 | Catalog (Product) | name, description |
-| Catalog (ProductAttribute, Matrix) | name, value labels |
+| Catalog (ProductAttribute, Variant mode) | name, value labels |
+| Catalog (ChoiceGroup, Configurable mode) | name |
+| Catalog (Choice, Configurable mode) | label |
 | Catalog (Media) | alt_text |
 | Catalog (PlatformCategory) | name |
 | Promotion (Voucher) | description |
