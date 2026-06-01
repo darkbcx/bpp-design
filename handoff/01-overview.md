@@ -114,7 +114,7 @@ Terms used throughout this document.
 | **Catalog (domain)** | A named collection of Products within a store. Each store has one Default Catalog + zero or more additional Catalogs. |
 | **Catalog (wire)** | The Beckn v2 `Catalog` entity. One per (store, internal-catalog) combination. Has one `Provider`. |
 | **Provider (wire)** | The Beckn v2 `Provider` entity — represents one of our stores on the network. |
-| **Product** | An item for sale within a store. In one of four modes: `Standalone` (single SKU), `Variant` (attribute-driven variants with own SKUs), `Configurable` (build-your-own with choice groups), `Composite` (bundle of multiple SKUs). Per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md). |
+| **Product** | An item for sale within a store. In one of four modes: `Standalone` (single SKU), `Variant` (attribute-driven variants with optional own SKUs in a single per-store SKU namespace, per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md)), `Configurable` (build-your-own with choice groups), `Composite` (bundle of multiple SKUs). Per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md). |
 | **Resource (wire)** | The Beckn v2 `Resource` entity — Products and Variants project to this. |
 | **Offer (wire)** | The Beckn v2 `Offer` entity — pricing / availability of a Resource. |
 | **Contract (wire)** | The Beckn v2 `Contract` entity — generalized transaction object. Orders project to this. |
