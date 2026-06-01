@@ -2,7 +2,7 @@
 
 - **Status**: Draft
 - **Last updated**: 2026-06-01
-- **Backed by ADRs**: [ADR-0011](../decisions/0011-domain-events.md) (this), plus every ADR that emits or consumes events ([ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0006](../decisions/0006-inventory-model.md), [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md), [ADR-0009](../decisions/0009-identity-and-external-idp.md), [ADR-0010](../decisions/0010-invitation-account-reconciliation.md), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md))
+- **Backed by ADRs**: [ADR-0011](../decisions/0011-domain-events.md) (this), plus every ADR that emits or consumes events ([ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0006](../decisions/0006-inventory-model.md), [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md), [ADR-0009](../decisions/0009-identity-and-external-idp.md), [ADR-0010](../decisions/0010-invitation-account-reconciliation.md), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md), [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md))
 
 ## Purpose
 
@@ -227,8 +227,8 @@ Products ([ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-00
 
 Variants (Variant mode):
 - `catalog.product_variant_attribute_added`
-- `catalog.product_variant_added`
-- `catalog.product_variant_updated`
+- `catalog.product_variant_added` — payload includes optional `sku` (per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md); additive, no `event_version` bump)
+- `catalog.product_variant_updated` — payload includes optional `sku`; explicit `null` clears the variant's own SKU
 - `catalog.product_variant_removed`
 - `catalog.product_variant_media_updated`
 

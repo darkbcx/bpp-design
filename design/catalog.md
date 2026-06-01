@@ -2,7 +2,7 @@
 
 - **Status**: Draft
 - **Last updated**: 2026-06-01
-- **Backed by ADRs**: [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) (Catalog container), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md) (Product modeling — base), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md) (four-mode discriminator; Composite and Configurable Products)
+- **Backed by ADRs**: [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md) (Catalog container), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md) (Product modeling — base), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md) (four-mode discriminator; Composite and Configurable Products), [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md) (optional per-variant SKU; Pattern B as sole Variant-mode projection)
 
 ## Purpose
 
@@ -100,10 +100,13 @@ Attributes:
 - `id` — internal opaque identifier.
 - `product_id` — parent Product reference; immutable.
 - `attribute_values` — one value per `ProductAttribute` of the parent (e.g., `{Size: M, Color: Red}`).
+- `sku` — **optional** (per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md)); nullable string. If set, unique within the store across the **single namespace** of `Product.sku` and `ProductVariant.sku` (case-insensitive). May be cleared by setting to `null`.
 - `media` — optional ordered list; if absent, inherits parent's media.
 - `price_override` — optional tax-excluded `Money` (in the store's currency). See [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md). Variants inherit the parent's `tax_rate`; effective `tax_amount` and `published_price` are derived from `(price_override ?? parent.base_price) × parent.tax_rate`.
 
-Variants share their parent's name, description, SKU (if any), `tax_rate`, and category assignments. A variant does not carry its own `ProductComponent` or `ChoiceGroup` (mutual exclusion per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)). **Availability and stock are owned by the Inventory context** (see [ADR-0006](../decisions/0006-inventory-model.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)) — the Catalog domain knows nothing about whether a Variant is in stock or purchasable.
+**SKU resolution.** A Variant's effective SKU is `variant.sku ?? parent.sku ?? null`. Consumers (Bridge wire projection, Order line snapshots, admin UI display) use this precedence; an Application-Layer helper `ResolveVariantSku(variant_id)` is recommended to centralize the lookup.
+
+Variants share their parent's name, description, `tax_rate`, and category assignments. A variant does not carry its own `ProductComponent` or `ChoiceGroup` (mutual exclusion per [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)). **Availability and stock are owned by the Inventory context** (see [ADR-0006](../decisions/0006-inventory-model.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)) — the Catalog domain knows nothing about whether a Variant is in stock or purchasable.
 
 Invariant: a Product cannot have two variants with the same attribute-value combination.
 
@@ -281,7 +284,7 @@ Managed by System Admins. Transitions: created → Active → Deprecated. Deleti
 - `Product.mode` is immutable; no in-place conversion between modes.
 - `Product.status == Active` ⇒ at least one `ProductCategoryAssignment` **and** the mode-specific guard is satisfied (see Lifecycles).
 - `Product.name` unique within store (case-insensitive).
-- `Product.sku` unique within store (case-insensitive), if set.
+- `Product.sku` and `ProductVariant.sku` together unique within store (case-insensitive), if set — they share a **single per-store SKU namespace** per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md).
 - `ProductVariant`: unique attribute-value combination per parent Product.
 - `Catalog`: each Store has **exactly one** Default Catalog. Default Catalog cannot be deleted.
 - `PlatformCategory`: cannot be deleted while any assignment references it.
@@ -315,9 +318,10 @@ Managed by System Admins. Transitions: created → Active → Deprecated. Deleti
 - `AssignProductToCategory(product_id, category_id)`
 - `UnassignProductFromCategory(product_id, category_id)`
 - `AddVariantAttribute(product_id, attribute_name, allowed_values)` *(Variant mode only)*
-- `AddProductVariant(product_id, attribute_values)` *(Variant mode only)*
-- `UpdateProductVariant(variant_id, ...)`
+- `AddProductVariant(product_id, attribute_values, sku?)` *(Variant mode only; `sku` optional per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md))*
+- `UpdateProductVariant(variant_id, ..., sku?)` *(passing `sku: null` clears the variant's own SKU; resolution falls back to parent's per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md))*
 - `RemoveProductVariant(variant_id)` *(or retire if referenced by orders)*
+- `ResolveVariantSku(variant_id) → string | null` *(read-side helper; returns `variant.sku ?? parent.sku ?? null`)*
 - `AddProductComponent(product_id, component_anchor_ref, quantity)` *(Composite only)*
 - `UpdateProductComponentQuantity(component_id, quantity)` *(Composite only)*
 - `RemoveProductComponent(component_id)` *(Composite only; retire if referenced by orders)*
@@ -391,7 +395,7 @@ The Bridge projects (mapping registry owns the exact shape per protocol version)
 | `Catalog` (Default + additional) | catalog / category groupings under provider |
 | `PlatformCategory` | `provider.categories[]` entry, referenced from items |
 | `Product` mode = `Standalone` | `Resource` with `resourceStructure: PLAIN` |
-| `Product` mode = `Variant` (parent + variants) | `PLAIN` parent Resource + sibling `VARIANT` Resources (one per `ProductVariant`) |
+| `Product` mode = `Variant` (parent + variants) | **Always Pattern B** (per [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md)): `PLAIN` parent Resource + sibling `VARIANT` Resources (one per `ProductVariant`). Each `VARIANT` carries its own ID derived from `ProductVariant.id`, own resolved SKU (`variant.sku ?? parent.sku ?? null`), own price, own media. `parentResourceId`, `variantGroup`, and `isDefaultVariant` are populated by the Bridge. Pattern A (`variantMatrix`) is out of scope in v1. |
 | `Product` mode = `Configurable`, all `ChoiceGroup`s Optional | `Resource` with `resourceStructure: WITH_EXTRAS`; `customisationGroups[]` from ChoiceGroups |
 | `Product` mode = `Configurable`, any `ChoiceGroup` `RequiredSingle` | `Resource` with `resourceStructure: COMPOSED`, standalone; `customisationGroups[]` from ChoiceGroups |
 | `Product` mode = `Composite` | `Resource` with `resourceStructure: BUNDLE` + `bundleComposition[]`; paired with a BUNDLE-type Offer |
@@ -424,7 +428,7 @@ What the domain does NOT know:
 
 ## References
 
-- [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)
+- [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md), [ADR-0025](../decisions/0025-optional-per-variant-sku-and-pattern-b-projection.md)
 - CLAUDE.md §2.5 (bounded contexts), §3 (data modeling), §4 (Bridge), §5.9 (publication and catalogs), §5.10 (catalog and product model)
 - Related gaps: [08](../gaps/resolved/08-inventory-boundary.md), [09](../gaps/resolved/09-pricing-and-promotions.md), [10](../gaps/resolved/10-localization-and-currency.md), [13](../gaps/resolved/13-domain-events-design.md), [16](../gaps/resolved/16-soft-delete-and-audit.md)
 - `bitemycart` — reference for the original Matrix model pattern
