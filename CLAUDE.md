@@ -423,32 +423,40 @@ Publication on the Beckn network is **store-level**: an Active store appears as 
 
 ### 5.10 Catalog and Product Model
 
-The Catalog context owns Products and their variants. Detailed entity model in [`design/catalog.md`](design/catalog.md); decisions and reasoning in [ADR-0005](decisions/0005-catalog-and-product-modeling.md). At charter level:
+The Catalog context owns Products and their variants, components, and choice groups. Detailed entity model in [`design/catalog.md`](design/catalog.md); decisions and reasoning in [ADR-0005](decisions/0005-catalog-and-product-modeling.md) (base) and [ADR-0023](decisions/0023-product-composition-and-choice-modeling.md) (four-mode discriminator; Composite and Configurable Products). At charter level:
 
 * **Cross-store identity is independent.** A Product is owned by one store; no Product entity is shared across stores. Two stores selling the same physical SKU maintain two independent records. Cross-store deduplication for discovery is a search-layer concern, not a domain concern.
-* **Two variant modes, chosen per product, immutable:**
-  * **Matrix Mode** — Product has variant-defining attributes (e.g., Size, Color). Variants are explicit entities (combinations of attribute values) that share the Product's SKU. Used when per-variant SKU tracking is not required.
-  * **Flat Mode** — Product has no variant relationship; each "variant" is a separate independent Product with its own SKU. Stores group related Flat products via additional Catalogs (§5.9). Used when per-variant SKU tracking is required.
-  * Decision rule: if any variant needs its own SKU, use Flat; otherwise use Matrix.
-* **Product lifecycle**: Draft → Active → Archived. No deletion; Archived is retained for order history. Active → Draft is forbidden. Mode and store ownership are immutable.
+* **Four product modes, chosen per product, immutable** (per [ADR-0023](decisions/0023-product-composition-and-choice-modeling.md)):
+  * **Standalone** — single SKU, no variants, no components, no choice groups. The simplest mode.
+  * **Variant** — Product has variant-defining attributes (e.g., Size, Color); `ProductVariant` entities enumerate the chosen combinations. Variants share the parent's SKU; per-variant `price_override` and `media` are supported.
+  * **Configurable** — Product has one or more `ChoiceGroup`s, each with one or more `Choice`s. Selection types: `RequiredSingle` (must pick one), `OptionalSingle`, `OptionalMultiple`. A `Choice` may optionally carry an `option_product_ref` that anchors stock against another Standalone Product or ProductVariant.
+  * **Composite** — Product is a fixed-composition bundle of other Products: one or more `ProductComponent`s, each referencing a Standalone Product or ProductVariant with a `quantity`. Composition depth is exactly one (no nested composites).
+  * **Modes are mutually exclusive in v1.** No variant bundles, no configurable variants, no composite configurables. Workarounds documented in [ADR-0023](decisions/0023-product-composition-and-choice-modeling.md).
+* **Product lifecycle**: Draft → Active → Archived. No deletion; Archived is retained for order history. Active → Draft is forbidden. Mode and store ownership are immutable. Each mode adds a guard for `Active`: Variant needs ≥1 ProductVariant; Configurable needs ≥1 ChoiceGroup with ≥1 Choice each; Composite needs ≥1 ProductComponent.
 * **Categorization is platform-defined.** System Admins (§5.4) own a hierarchical Category taxonomy; stores assign their products to platform categories. At least one assignment is an entity invariant for `Active` Products. Store-private organization is served by additional Catalogs (§5.9), not by per-store categories. The Bridge derives Beckn category vocabulary from the platform taxonomy via the mapping registry.
-* **Media** is an ordered list per Product, with optional per-variant overrides in Matrix Mode. Storage is an Infrastructure concern; the domain knows only references.
-* **Baseline Product attributes** — required: name (unique within store), description, ≥1 category assignment for Active, `base_price` and `tax_rate` for Active (§5.12). Optional: SKU (unique within store if set), media, variant-defining attributes (Matrix only).
-* **Domain events** are emitted for every Catalog and Product mutation. The Bridge consumes them for republication; Audit consumes them for history. Event schema is owned by Gap 13.
+* **Media** is an ordered list per Product, with optional per-variant overrides in Variant mode. Storage is an Infrastructure concern; the domain knows only references.
+* **Baseline Product attributes** — required: name (unique within store), description, ≥1 category assignment for Active, `base_price` and `tax_rate` for Active (§5.12). Optional: SKU (unique within store if set), media, variant-defining attributes (Variant mode only), components (Composite mode only), choice groups (Configurable mode only). For Configurable, `base_price` is the configurator's starting price (Choice `price_delta`s compose at quote time). For Composite, `base_price` is the bundle's own price (typically discounted vs. component sum).
+* **Domain events** are emitted for every Catalog and Product mutation, including the new component / choice-group / choice mutations (see [`design/events.md`](design/events.md) for the registry). The Bridge consumes them for republication; Audit consumes them for history.
 
-What's explicitly out of scope at this stage: bundles / kits, digital-goods type taxonomy, search/discovery implementation, media storage, localization (Gap 10).
+What's explicitly out of scope at this stage: variant bundles (Family Combo S/M/L as native siblings); configurable variants (per-size extras menus); nested composites; digital-goods type taxonomy; search/discovery implementation; media storage. Workarounds for the deferred shapes are documented in [ADR-0023](decisions/0023-product-composition-and-choice-modeling.md).
 
 ### 5.11 Inventory
 
-The Inventory context owns *is the item purchasable right now* — stock count, reservations, owner-controlled availability — distinct from Catalog's *what is this item* ([ADR-0006](decisions/0006-inventory-model.md)).
+The Inventory context owns *is the item purchasable right now* — stock count, reservations, owner-controlled availability — distinct from Catalog's *what is this item* ([ADR-0006](decisions/0006-inventory-model.md), extended for Composite and Configurable Products by [ADR-0024](decisions/0024-inventory-for-composite-and-configurable-products.md)).
 
-* **Anchors.** Each inventory item is either a Flat Mode Product or a Matrix Mode ProductVariant; exactly one `StockLevel` per inventory item. Inventory references Catalog entities by opaque ID — no joins (§2.6).
-* **StockLevel** carries `stock_count` (integer ≥ 0) and `purchasable` (boolean; owner-controlled; default `true`).
-* **Effective availability** = `purchasable` AND `(stock_count − active reservations) > 0`. Computed on demand from `StockLevel` and active `Reservation` records.
-* **Reservations.** A `Reservation` is a temporary hold with `expires_at`. Created at order `init` (Beckn) or the equivalent first-party checkout step; **converted** (stock decremented atomically) at order `confirm`; **released** on cancel or timeout. The exact Beckn-flow trigger points are owned by Gap 11; the Reservation primitive itself is committed here.
+* **Two anchor types.**
+  * `StockLevel` (per [ADR-0006](decisions/0006-inventory-model.md)) — anchors stock-tracked items: Standalone Products and ProductVariants of Variant-mode Products. Carries `stock_count` (integer ≥ 0) and `purchasable` (boolean; owner-controlled; default `true`).
+  * `OwnerPurchasability` (per [ADR-0024](decisions/0024-inventory-for-composite-and-configurable-products.md)) — anchors non-stock-tracked Products: Composite and Configurable Products. Carries `purchasable` only; no count (Composite availability derives from components, Configurable availability derives from Required `ChoiceGroup` completability).
+  * Exactly one anchor per anchored Catalog entity. Inventory references Catalog entities by opaque ID — no joins (§2.6).
+* **Effective availability** is computed per Product mode:
+  * **Standalone / Variant** — `purchasable AND (stock_count − active reservations) > 0`.
+  * **Composite** — `OwnerPurchasability.purchasable AND min over components of (component's effective available_quantity ÷ component.quantity) > 0`. "Weakest component wins."
+  * **Configurable** — `OwnerPurchasability.purchasable AND every RequiredSingle ChoiceGroup has ≥1 available Choice` (a Choice is available iff its `option_product_ref` is null or the referenced anchor is available). OptionalSingle / OptionalMultiple groups do not gate availability.
+  * The Inventory `GetEffectiveAvailability(anchor_ref)` use case dispatches internally; callers don't need to know which formula applies.
+* **Reservations.** A `Reservation` is a temporary hold against a `StockLevel` with `expires_at`. Created at order `init` (Beckn) or the equivalent first-party checkout step; **converted** (stock decremented atomically) at order `confirm`; **released** on cancel or timeout. For Composite order lines, reservations fan out — one Reservation per `ProductComponent`, all sharing the same `held_by_ref`, converted/released atomically. For Configurable order lines, one Reservation per chosen `Choice` that carries an `option_product_ref` (choices without a ref consume no stock).
 * **No multi-location, no backorders in v1.** Single logical inventory per store; cannot sell beyond stock.
-* **Stock-movement event log.** Every stock-affecting action emits a typed event (`Received`, `Sold`, `Returned`, `Corrected`, `Reserved`, `Released`, `PurchasableToggled`) carrying actor, timestamp, signed delta, and optional reason. Audit (Gap 16) ingests this stream.
-* **Communication.** Admin UI and Bridge query Inventory **synchronously** for availability (the Bridge for `/on_select` quotes and catalog projections; the Admin UI for owner dashboards). Order context calls Inventory's Application Layer to create/convert/release Reservations. Inventory subscribes to Catalog product/variant lifecycle events — creating StockLevels on creation, marking them `Inactive` on archive.
+* **Stock-movement event log.** Every stock-affecting action emits a typed event (`Received`, `Sold`, `Returned`, `Corrected`, `Reserved`, `Released`, `PurchasableToggled`) carrying actor, timestamp, signed delta, and optional reason. These fire against `StockLevel` anchors only. A separate `OwnerPurchasabilityToggled` event fires when the owner toggles a Composite or Configurable Product's purchasable flag — it carries no delta and is not a stock-movement subtype. Audit (§5.19) ingests both streams.
+* **Communication.** Admin UI and Bridge query Inventory **synchronously** for availability (the Bridge for `/on_select` quotes and catalog projections; the Admin UI for owner dashboards). Order context calls Inventory's Application Layer to create/convert/release Reservations. Inventory subscribes to Catalog product/variant lifecycle events — creating the appropriate anchor (`StockLevel` for Standalone / Variant, `OwnerPurchasability` for Composite / Configurable) on creation, marking it `Inactive` on archive. Component / choice-group / choice mutations affect *computation* of effective availability but do not change the anchor itself.
 * Stock decrement happens **only** via Reservation conversion at order confirm, or via manual `Corrected` adjustments and `Received` receipts. Direct stock writes outside these paths are forbidden.
 
 ### 5.12 Pricing and Tax
@@ -457,10 +465,12 @@ The Catalog context owns priced entities ([ADR-0007](decisions/0007-pricing-tax-
 
 * **Money** is a value object: integer amount in minor units (paise, cents) + ISO 4217 currency code. Floating point is forbidden for monetary values.
 * A store has **one currency**, set at creation and **immutable** once the store has any Active product. Stores needing another currency create a new store.
-* **Per-Product** (Flat or Matrix) attributes:
+* **Per-Product** attributes (all four modes; see §5.10):
   - Stored: `base_price` (tax-excluded `Money`), `tax_rate` (decimal percentage, e.g., `18.00`).
   - Derived, cached, recomputed on change: `tax_amount = round(base_price × tax_rate / 100)`, `published_price = base_price + tax_amount`.
-* **ProductVariant (Matrix)** inherits the parent Product's `tax_rate`; only `price_override` is variant-level. Variant effective values are derived from `(price_override ?? parent.base_price) × parent.tax_rate`. **No per-variant tax rate** — tax category attaches to the product.
+  - Per-mode interpretation: Standalone / Variant — the Product's own list price. Configurable — the configurator's starting price (Choice `price_delta`s compose at quote time per [ADR-0023](decisions/0023-product-composition-and-choice-modeling.md)). Composite — the bundle's own price (component prices are informational).
+* **ProductVariant (Variant mode)** inherits the parent Product's `tax_rate`; only `price_override` is variant-level. Variant effective values are derived from `(price_override ?? parent.base_price) × parent.tax_rate`. **No per-variant tax rate** — tax category attaches to the product.
+* **Choice price_delta (Configurable mode)** — optional pre-tax `Money` added to (or subtracted from) the configurator's `base_price` at quote time. No separate `tax_rate`; the parent Product's rate applies to the composed pre-tax price.
 * **Quote construction** is owned by the **Order context**; Catalog supplies item prices and tax breakdowns as inputs. No "quoted price" stored in Catalog.
 
 ### 5.13 Vouchers (Promotion context)
@@ -483,7 +493,9 @@ Multi-language content is a v1 feature. Decisions in [ADR-0008](decisions/0008-l
 * **Translatable fields** (subject to `LocalizedText`):
   - **Store**: name, description, public contact display.
   - **Product**: name, description.
-  - **ProductAttribute** (Matrix): name, and optionally the labels of allowed values (value identity itself stays locale-neutral).
+  - **ProductAttribute** (Variant mode): name, and optionally the labels of allowed values (value identity itself stays locale-neutral).
+  - **ChoiceGroup** (Configurable mode): name.
+  - **Choice** (Configurable mode): label.
   - **Media**: alt_text.
   - **Voucher**: description.
   - **PlatformCategory**: name.
