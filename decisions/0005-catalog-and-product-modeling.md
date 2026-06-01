@@ -5,6 +5,7 @@
 - **Resolves gap**: [gaps/resolved/07-catalog-modeling-scope.md](../gaps/resolved/07-catalog-modeling-scope.md)
 - **Builds on**: [ADR-0001](0001-bpp-network-identity.md), [ADR-0004](0004-store-publication-and-multi-catalog-projection.md)
 - **Partially superseded by**: [ADR-0023](0023-product-composition-and-choice-modeling.md) — the `Matrix | Flat` mode discriminator is replaced by a four-mode discriminator (`Standalone | Variant | Configurable | Composite`), and the "bundles / kits / composite products — not in v1" deferral is reversed. Cross-store independence, identifier strategy, category taxonomy, lifecycle states, and media handling survive unchanged.
+- **Partially superseded by**: [ADR-0025](0025-optional-per-variant-sku-and-pattern-b-projection.md) — the rule "Variants share the parent Product's SKU (variants have no individual SKU in this mode)" is replaced; `ProductVariant.sku` is now optional in a single per-store namespace with `Product.sku`. The Variant-vs-Standalone decision rule shifts from "do you need per-variant SKU?" to "do items share name / description / category / lifecycle?".
 - **Sub-design**: [design/catalog.md](../design/catalog.md)
 
 ## Context
