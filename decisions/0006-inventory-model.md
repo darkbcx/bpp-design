@@ -5,6 +5,7 @@
 - **Resolves gap**: [gaps/resolved/08-inventory-boundary.md](../gaps/resolved/08-inventory-boundary.md)
 - **Builds on**: [ADR-0005](0005-catalog-and-product-modeling.md) (defines the anchors Inventory tracks)
 - **Resolves deferral from**: [ADR-0005](0005-catalog-and-product-modeling.md) (the `availability_flag` placeholder on `ProductVariant` moves to Inventory's `StockLevel.purchasable`)
+- **Partially superseded by**: [ADR-0024](0024-inventory-for-composite-and-configurable-products.md) — inventory anchors expand to cover Composite and Configurable Products via a new `OwnerPurchasability` entity, and Reservation conversion fans out across components and option-anchored choices. Single store-scoped inventory, integer stock count, timed reservations, and the stock-movement event log all survive unchanged.
 
 ## Context
 

@@ -4,6 +4,7 @@
 - **Date**: 2026-05-28
 - **Resolves gap**: [gaps/resolved/07-catalog-modeling-scope.md](../gaps/resolved/07-catalog-modeling-scope.md)
 - **Builds on**: [ADR-0001](0001-bpp-network-identity.md), [ADR-0004](0004-store-publication-and-multi-catalog-projection.md)
+- **Partially superseded by**: [ADR-0023](0023-product-composition-and-choice-modeling.md) — the `Matrix | Flat` mode discriminator is replaced by a four-mode discriminator (`Standalone | Variant | Configurable | Composite`), and the "bundles / kits / composite products — not in v1" deferral is reversed. Cross-store independence, identifier strategy, category taxonomy, lifecycle states, and media handling survive unchanged.
 - **Sub-design**: [design/catalog.md](../design/catalog.md)
 
 ## Context
