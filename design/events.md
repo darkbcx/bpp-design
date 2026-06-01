@@ -1,8 +1,8 @@
 # Design: Domain Events
 
 - **Status**: Draft
-- **Last updated**: 2026-05-28
-- **Backed by ADRs**: [ADR-0011](../decisions/0011-domain-events.md) (this), plus every ADR that emits or consumes events ([ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0006](../decisions/0006-inventory-model.md), [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md), [ADR-0009](../decisions/0009-identity-and-external-idp.md), [ADR-0010](../decisions/0010-invitation-account-reconciliation.md))
+- **Last updated**: 2026-06-01
+- **Backed by ADRs**: [ADR-0011](../decisions/0011-domain-events.md) (this), plus every ADR that emits or consumes events ([ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md), [ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0006](../decisions/0006-inventory-model.md), [ADR-0007](../decisions/0007-pricing-tax-and-vouchers.md), [ADR-0009](../decisions/0009-identity-and-external-idp.md), [ADR-0010](../decisions/0010-invitation-account-reconciliation.md), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md), [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md))
 
 ## Purpose
 
@@ -217,20 +217,33 @@ Authorization & PII ([ADR-0015](../decisions/0015-pii-and-right-to-erasure.md), 
 
 ### Catalog context
 
-Products ([ADR-0005](../decisions/0005-catalog-and-product-modeling.md)):
-- `catalog.product_created`
+Products ([ADR-0005](../decisions/0005-catalog-and-product-modeling.md), [ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)):
+- `catalog.product_created` — payload includes `mode ∈ { Standalone, Variant, Configurable, Composite }`
 - `catalog.product_updated`
 - `catalog.product_published`
 - `catalog.product_archived`
 - `catalog.product_restored`
 - `catalog.product_media_updated`
 
-Variants (Matrix mode):
+Variants (Variant mode):
 - `catalog.product_variant_attribute_added`
 - `catalog.product_variant_added`
 - `catalog.product_variant_updated`
 - `catalog.product_variant_removed`
 - `catalog.product_variant_media_updated`
+
+Components (Composite mode) ([ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)):
+- `catalog.product_component_added` — payload includes `component_anchor_ref`, `quantity`
+- `catalog.product_component_quantity_changed`
+- `catalog.product_component_removed`
+
+Choice groups & choices (Configurable mode) ([ADR-0023](../decisions/0023-product-composition-and-choice-modeling.md)):
+- `catalog.choice_group_added` — payload includes `selection_type`, `min_selections`, `max_selections`
+- `catalog.choice_group_updated`
+- `catalog.choice_group_removed`
+- `catalog.choice_added` — payload includes `label` (LocalizedText), `price_delta?`, `option_product_ref?`
+- `catalog.choice_updated`
+- `catalog.choice_removed`
 
 Categories:
 - `catalog.product_category_assigned`
@@ -251,7 +264,7 @@ Store catalogs ([ADR-0004](../decisions/0004-store-publication-and-multi-catalog
 
 ### Inventory context
 
-Stock movements ([ADR-0006](../decisions/0006-inventory-model.md)):
+Stock movements ([ADR-0006](../decisions/0006-inventory-model.md)) — fire against `StockLevel` anchors:
 - `inventory.stock_level_created`
 - `inventory.stock_level_inactivated`
 - `inventory.stock_received`
@@ -260,7 +273,12 @@ Stock movements ([ADR-0006](../decisions/0006-inventory-model.md)):
 - `inventory.stock_corrected`
 - `inventory.stock_reserved`
 - `inventory.stock_released`
-- `inventory.purchasable_toggled`
+- `inventory.purchasable_toggled` — owner toggled `StockLevel.purchasable`
+
+Owner purchasability ([ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)) — fires against `OwnerPurchasability` anchors (Composite and Configurable Products):
+- `inventory.owner_purchasability_created` — emitted when a Composite or Configurable Product is created
+- `inventory.owner_purchasability_inactivated` — emitted on parent Product archive
+- `inventory.owner_purchasability_toggled` — owner flipped `OwnerPurchasability.purchasable`; not a stock-movement subtype (carries no delta)
 
 ### Promotion context
 
@@ -291,7 +309,7 @@ Order lifecycle ([ADR-0017](../decisions/0017-order-and-fulfillment.md)):
 |---|---|---|
 | **`beckn-bridge`** | `tenancy.store_status_changed`, all `catalog.*` mutations, selected `promotion.*` | Re-project resources onto the Beckn network ([ADR-0003](../decisions/0003-store-lifecycle-and-state-machine.md), [ADR-0004](../decisions/0004-store-publication-and-multi-catalog-projection.md)) |
 | **`audit`** | Broad subscription across all contexts | Compliance and history ingestion ([Gap 16](../gaps/16-soft-delete-and-audit.md)) |
-| **`inventory-catalog-subscriber`** | `catalog.product_created`, `catalog.product_variant_added`, `catalog.product_archived`, `catalog.product_variant_removed`, `catalog.product_restored` | Auto-create / inactivate `StockLevel` per [ADR-0006](../decisions/0006-inventory-model.md) |
+| **`inventory-catalog-subscriber`** | `catalog.product_created`, `catalog.product_variant_added`, `catalog.product_archived`, `catalog.product_variant_removed`, `catalog.product_restored` | Auto-create / inactivate the inventory anchor per Product mode: `StockLevel` for Standalone / Variant (per [ADR-0006](../decisions/0006-inventory-model.md)), `OwnerPurchasability` for Composite / Configurable (per [ADR-0024](../decisions/0024-inventory-for-composite-and-configurable-products.md)). Dispatch happens inside the subscriber; event filter is unchanged. |
 
 Future subscribers (not in v1):
 - Admin-UI read-side projections (event-sourced views for fast dashboard queries — admin-only; the platform has no buyer-facing storefront per [ADR-0021](../decisions/0021-pure-bpp-no-storefront.md)).
